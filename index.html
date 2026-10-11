@@ -11,11 +11,38 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="manifest" href="./manifest.webmanifest">
+<script>
+/* Startup safety net: if a file fails to load or the app crashes, say so on screen. */
+(function(){
+  var errs=[];
+  function show(){
+    var b=document.getElementById('yoteiErr');
+    if(!b){
+      b=document.createElement('pre'); b.id='yoteiErr';
+      b.style.cssText='position:fixed;left:0;right:0;bottom:0;max-height:45%;overflow:auto;margin:0;padding:10px 12px;background:#7f1d1d;color:#fff;font:12px/1.4 monospace;white-space:pre-wrap;z-index:2147483647';
+      (document.body||document.documentElement).appendChild(b);
+    }
+    b.textContent='Yotei could not start properly:\n'+errs.join('\n');
+  }
+  function add(m){ if(errs.indexOf(m)<0){ errs.push(m); show(); } }
+  window.addEventListener('error',function(e){
+    var t=e.target;
+    if(t&&t!==window&&t.tagName){
+      /* a resource failed to load: only app files (same origin LINK/SCRIPT) matter, not images or CDN fetches */
+      if(t.tagName==='LINK'||t.tagName==='SCRIPT'){
+        var u=t.href||t.src||'';
+        try{ if(new URL(u,location.href).origin===location.origin) add('Could not load '+u.split('/').slice(3).join('/')); }catch(x){}
+      }
+    } else if(e.message) add(e.message+(e.filename?' ('+e.filename.split('/').pop()+':'+e.lineno+')':''));
+  },true);
+  window.addEventListener('unhandledrejection',function(e){ add('Error: '+((e.reason&&e.reason.message)||e.reason)); });
+})();
+</script>
 <script>try{var D=document.documentElement,T=JSON.parse(localStorage.getItem('yotei_v2_theme')||'"dark"');if(T==='auto')T=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';D.dataset.theme=T;D.dataset.text=JSON.parse(localStorage.getItem('yotei_v2_text')||'"normal"')}catch(e){}</script>
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
-<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="apple-touch-icon" href="./icon-180.png">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./src/styles.css">
+<link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 <div class="app">
@@ -179,6 +206,6 @@
   <div id="ss_list"></div>
   <div class="ea"><button id="ss_all">Tick all</button><button id="ss_close">Close</button></div>
 </div></dialog>
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="./main.js"></script>
 </body>
 </html>

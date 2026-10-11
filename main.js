@@ -1232,9 +1232,9 @@ function remCard(){
 async function notify(title, body, tag){
   try{
     const reg = await navigator.serviceWorker.getRegistration();
-    if (reg && reg.showNotification){ await reg.showNotification(title, { body, tag, icon:'icons/icon-192.png', badge:'icons/icon-192.png', vibrate:[120, 60, 120] }); return; }
+    if (reg && reg.showNotification){ await reg.showNotification(title, { body, tag, icon:'icon-192.png', badge:'icon-192.png', vibrate:[120, 60, 120] }); return; }
   }catch{}
-  try{ new Notification(title, { body, tag, icon:'icons/icon-192.png' }); }catch{}
+  try{ new Notification(title, { body, tag, icon:'icon-192.png' }); }catch{}
 }
 function remCheck(){
   const R = store.get('rem', { on:false, lead:0 });
