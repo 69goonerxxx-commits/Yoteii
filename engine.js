@@ -2,7 +2,8 @@
 // SCHEDULING ENGINE: turns blocks + wake time into timed rows.
 // Pure functions: everything they read is passed in, so they can be tested without a browser.
 // ============================================================
-export function isoLocal(d){ const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); }
+import { isoLocal } from './dates.js';
+export { isoLocal };
 
 export function typeOfIn(types, k, WIN){
   const keys = Object.keys(WIN);
@@ -26,7 +27,7 @@ export function applyOvr(b, OV, iso, dow, dm){
 export function buildSchedule(ctx){
   const { dow, wake, day, CAP, MODES, WIN, OV, getBlocks, wins, fmt } = ctx;
   const typeOf = k => typeOfIn(day.types, k, WIN);
-  const m1 = typeOf('climb1'), M = MODES[m1 || 'none'], iso = isoLocal(new Date(day.date)), dm = m1 || Object.values(day.types || {})[0] || null;
+  const m1 = typeOf('climb1'), M = MODES[m1 || 'none'], iso = day.date, dm = m1 || Object.values(day.types || {})[0] || null;
   const eff = b => applyOvr(b, OV, iso, dow, dm), onDay = b => (!b.days || b.days.includes(dow)) && (!b.from || iso >= b.from) && (!b.modes || (dm && b.modes.includes(dm)));
   const ooF = k => (day.oneoffs || []).filter(x => (x.w || 'climb1') === k).map(x => ({ ...x, md:'oo', post:true }));
   const fixSort = arr => { const ix = [], fx = []; arr.forEach((b, i) => { if ((b.fixed !== undefined || b.at !== undefined) && !b.sug){ ix.push(i); fx.push(b); } }); fx.sort((a, b) => (a.fixed !== undefined ? a.fixed : a.at) - (b.fixed !== undefined ? b.fixed : b.at)); const out = arr.slice(); ix.forEach((i, j) => { out[i] = fx[j]; }); return out; };

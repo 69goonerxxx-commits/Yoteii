@@ -1,6 +1,9 @@
 import { esc } from './util.js';
 import { validateBackup } from './validate.js';
-import { isoLocal, applyOvr, typeOfIn, buildSchedule } from './engine.js';
+import { store, initStore, info, onStoreError, replaceAll, clearAll, estimateBytes, makeSnapshot, snapshotIfDue, listSnapshots, restoreSnapshot } from './storage.js';
+import { applyOvr, typeOfIn, buildSchedule } from './engine.js';
+import { isoLocal, parseDay, dowOf, cmpDay } from './dates.js';
+import { migrateDates, needsDateMigration, DATE_FMT } from './migrate.js';
 import { guessIcon, ICONS, iconMarkup, ICON_GROUPS, ICON_TAGS } from './icons.js';
 import { APP_VERSION, FEATURES, LIMITS, CHANGELOG } from './about.js';
 import { TPL } from './templates.js';
@@ -21,16 +24,28 @@ import { BLOCK_INFO, SCI_SRC, PRESS_PTS, CIRC_PTS } from './science.js';
 // STORAGE & CONFIG
 // ============================================================
 const $ = s => document.querySelector(s);
-const store = {
-  get(k, d){ try{ const v = localStorage.getItem('yotei_v2_'+k); return v === null ? d : JSON.parse(v); }catch{ return d; } },
-  set(k, v){ try{ localStorage.setItem('yotei_v2_'+k, JSON.stringify(v)); return true; }catch{ storeFailed(); return false; } }
-};
+await initStore();   // load everything saved on this device before the app starts
+await upgradeDates();
+// v2 stored days as "Sun Oct 11 2026"; v3 uses "2026-10-11". Converted once, with a snapshot of the old data kept first.
+async function upgradeDates(){
+  if (store.get('dateFmt', null) === DATE_FMT) return;
+  const data = store.dump();
+  if (Object.keys(data).length){
+    try{ await makeSnapshot('before-upgrade'); }catch{}
+    const next = migrateDates(data);
+    try{ await replaceAll(next); }
+    catch{ Object.entries(next).forEach(([k, v]) => store.setRaw(k, v)); }   // couldn't save in one step: carry on in memory, the app warns and retries on the next launch
+  }
+  store.set('dateFmt', DATE_FMT);
+}
 // Saving can fail (storage full, or blocked in private mode). Say so, at most once every 15 seconds, and offer a backup.
 let lastSaveWarn = 0;
 function storeFailed(){
   const now = Date.now(); if (now - lastSaveWarn < 15000) return; lastSaveWarn = now;
   if (document.getElementById('toastMsg')) toast("Couldn't save your changes. Storage may be full or blocked. Back up now so nothing is lost.", 'Back up', exportData);
 }
+onStoreError(() => storeFailed());
+snapshotIfDue().catch(() => {});   // first launch of the day: keep a snapshot of how things were
 const DEF_WAKE = 300;                      // 5:00 AM, in minutes after midnight
 const CAP = Object.assign({ soft: 22*60, hard: 23*60 }, store.get('caps', {}));  // defaults 10 PM soft, 11 PM hard; editable in Settings
 
@@ -71,7 +86,7 @@ let done = null, day = null, plans = store.get('plans', {});
 let openState = store.get('open', {});
 let editing = false, cur = null, edDays = [];
 let noteEditing = null;
-const todayStr = () => new Date().toDateString();
+const todayStr = () => isoLocal(new Date());
 let viewDate = todayStr();
 loadDay(viewDate);
 function defWake(){ const w = store.get('wake', DEF_WAKE); return typeof w === 'number' ? w : ((w && w.home) || DEF_WAKE); }
@@ -79,7 +94,7 @@ function planFor(ds){
   if (plans[ds]) return plans[ds];
   const L = store.get('day', null), D = store.get('done', null);
   if (L && L.date === ds && L.types) return { w:defWake(), d:(D && D.date === ds ? D.ids : []), t:L.types, a:!!L.away, n:L.note || '' };
-  const h = new Date(ds) < new Date(todayStr()) ? store.get('hist', {})[ds] : null;
+  const h = ds < todayStr() ? store.get('hist', {})[ds] : null;
   if (h) return { w:h.wake, d:(h.rows || []).filter(r => r.done).map(r => r.id), t:h.types || {}, a:false, n:h.note || '' };
   return null;
 }
@@ -92,11 +107,11 @@ function loadDay(ds){
 }
 function saveDay(){
   plans[viewDate] = { w:wake, d:done.ids, t:day.types, a:!!day.away, n:day.note || '', p:day.prevTypes || null, o:day.oneoffs || [], l:!!day.live, s:day.shift || null };
-  const ks = Object.keys(plans).sort((a, b) => new Date(a) - new Date(b));
+  const ks = Object.keys(plans).sort(cmpDay);
   while (ks.length > 200) delete plans[ks.shift()];
   store.set('plans', plans);
   if (viewDate === todayStr()) store.set('wake', wake);
-  if (new Date(viewDate) <= new Date(todayStr())) saveHist();
+  if (viewDate <= todayStr()) saveHist();
 }
 function goDate(ds){ viewDate = ds; noteEditing = null; loadDay(ds); render(); }
 const shownNotes = new Set();
@@ -124,7 +139,7 @@ function range(a, b){
   return (x[1] === y[1] ? x[0] : x[0]+' '+x[1]) + ' – ' + y[0] + ' ' + y[1];
 }
 function mondayOf(ds){
-  const d = new Date(ds), wd = d.getDay(), diff = (wd === 0 ? -6 : 1 - wd);
+  const d = parseDay(ds), wd = d.getDay(), diff = (wd === 0 ? -6 : 1 - wd);
   const m = new Date(d); m.setDate(d.getDate() + diff); return m;
 }
 function winFor(clock, wk){
@@ -213,7 +228,7 @@ function typeOf(k){ return typeOfIn(day.types, k, WIN); }
 function schedule(){
   const sn = snapRows();
   if (sn) return { rows:sn, msg:'Saved record of this day. Edit anything and it rebuilds from your current routines.', tone:'ok' };
-  return build(new Date(viewDate).getDay());
+  return build(parseDay(viewDate).getDay());
 }
 function pickType(k, m){ needLive(); day.types[k] = m; saveDay(); render(); }
 // ============================================================
@@ -225,7 +240,7 @@ const wins = () => {
   const o = store.get('wins', {}), W = store.get('wovr', {}), r = {};
   for (const k in WIN) r[k] = { ...winBase(k), ...(o[k] || {}) };
   if (day && day.date){
-    const d = new Date(day.date), iso = isoLocal(d), dow = d.getDay();
+    const iso = day.date, dow = dowOf(day.date);
     for (const k in W) (W[k] || []).forEach(e => {
       if (!r[k] || (e.from && iso < e.from) || (e.to && iso > e.to) || (e.days && !e.days.includes(dow))) return;
       Object.keys(e.patch).forEach(f => { if (e.patch[f] === null) delete r[k][f]; else r[k][f] = e.patch[f]; });
@@ -296,7 +311,7 @@ function drawDays(){
 function effBlock(l, b){
   if (!b || l === 'oo') return b;
   const m1 = typeOf('climb1'), dm = m1 || Object.values(day.types || {})[0] || null;
-  return applyOvr(b, store.get('ovr', {}), isoLocal(new Date(viewDate)), new Date(viewDate).getDay(), dm) || b;
+  return applyOvr(b, store.get('ovr', {}), viewDate, parseDay(viewDate).getDay(), dm) || b;
 }
 const KIND_HINT = {
   core:'Shrinks last when time is tight. This only matters in the Morning and Night routines.',
@@ -509,7 +524,7 @@ function openTaskSheet(l, id){
   $('#ts_icon').innerHTML = iconMarkup(r.icon || guessIcon(r.t) || st.i);
   $('#ts_icon').style.setProperty('--dot', col); $('#ts_icon').style.color = onColor(col);
   $('#ts_title').innerHTML = esc(r.t) + (l !== 'oo' ? ICONS['arrows-clockwise'] : '');
-  const dt = new Date(viewDate).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+  const dt = parseDay(viewDate).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
   const dur = m => m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
   $('#ts_time').textContent = dt + ' \u00b7 ' + (cut ? 'Skipped today' : r.sug ? 'Suggestion' : range(r.start, r.end) + ' (' + dur(r.use) + ')');
   const dEl = $('#ts_details'); dEl.textContent = r.details || 'No details yet'; dEl.className = r.details ? '' : 'none';
@@ -711,11 +726,11 @@ function historyDayInner(h){
   return (tp ? '<p class="wn">' + tp + '</p>' : '') + (h.note ? '<p class="hl">Note: ' + esc(h.note) + '</p>' : '') + groups;
 }
 function trendsHtml(){
-  const H = store.get('hist', {}), days = Object.keys(H).sort((a, b) => new Date(b) - new Date(a)).slice(0, 7).reverse();
+  const H = store.get('hist', {}), days = Object.keys(H).sort((a, b) => cmpDay(b, a)).slice(0, 7).reverse();
   if (!days.length) return '<p class="wn">Not enough history yet for trends.</p>';
   const dayRows = days.map(d => {
     const h = H[d], rs = (h.rows || []).filter(r => r.u > 0 && !r.sug), n = rs.filter(r => r.done).length, pct = rs.length ? Math.round(n / rs.length * 100) : 0;
-    return '<div class="trow"><span class="tlab">' + new Date(d).toLocaleDateString(undefined, { weekday:'short' }) + '</span><div class="tbar"><div class="tfill" style="width:' + pct + '%"></div></div><span class="tpct">' + pct + '%</span></div>';
+    return '<div class="trow"><span class="tlab">' + parseDay(d).toLocaleDateString(undefined, { weekday:'short' }) + '</span><div class="tbar"><div class="tfill" style="width:' + pct + '%"></div></div><span class="tpct">' + pct + '%</span></div>';
   }).join('');
   const counts = {};
   Object.values(H).forEach(h => (h.rows || []).forEach(r => {
@@ -730,21 +745,21 @@ function trendsHtml(){
 }
 function histHtml(){
   const H = store.get('hist', {});
-  const days = Object.keys(H).filter(d => d !== todayStr()).sort((a, b) => new Date(b) - new Date(a));
+  const days = Object.keys(H).filter(d => d !== todayStr()).sort((a, b) => cmpDay(b, a));
   const items = days.map(d => {
-    const h = H[d], rs = h.rows || [], live = rs.filter(r => r.u > 0 && !r.sug), n = live.filter(r => r.done).length, dt = new Date(d);
+    const h = H[d], rs = h.rows || [], live = rs.filter(r => r.u > 0 && !r.sug), n = live.filter(r => r.done).length, dt = parseDay(d);
     return '<details class="hday"><summary><span class="bt">' + dt.toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric', year:'numeric' }) + '</span><span class="bm">' + n + ' of ' + live.length + ' done, woke ' + fmt(h.wake).join(' ') + '</span></summary><div class="hb">' + historyDayInner(h) + '<button class="hdel" data-hd="' + esc(d) + '">Delete this record</button></div></details>';
   }).join('');
   return items || '<p class="wn">No past days yet.</p>';
 }
 function drawNav(){
-  const d = new Date(viewDate);
+  const d = parseDay(viewDate);
   $('#date').innerHTML = '<b>' + d.toLocaleDateString(undefined, { weekday:'long' }) + '</b><span class="dacc">' + d.toLocaleDateString(undefined, { month:'long', day:'numeric', year:'numeric' }) + '</span>';
   const base = mondayOf(viewDate), todayDS = todayStr();
   let strip = '';
   for (let i = 0; i < 7; i++){
     const wd = new Date(base); wd.setDate(base.getDate() + i);
-    const ds = wd.toDateString(), sel = ds === viewDate, isToday = ds === todayDS;
+    const ds = isoLocal(wd), sel = ds === viewDate, isToday = ds === todayDS;
     strip += '<button class="wd' + (sel ? ' on' : '') + (isToday ? ' today' : '') + '" data-d="' + ds + '"><span class="wdn">' + wd.toLocaleDateString(undefined, { weekday:'short' }) + '</span><span class="wdd">' + wd.getDate() + '</span><span class="wdots">' + dayColors(ds).map(c => '<i style="--c:' + c + '"></i>').join('') + '</span></button>';
   }
   $('#weekstrip').innerHTML = strip;
@@ -756,19 +771,19 @@ function drawNav(){
 let lastSig = '';
 function saveHist(){
   const tn = store.get('taskNotes', {});
-  const snap = { dow:new Date(day.date).getDay(), wake, types:day.types, note:day.note || '', rows:schedule().rows.map(r => ({ w:r.w, id:r.id, t:r.t, md:r.md || null, s:r.start, e:r.end, u:r.use, sug:!!r.sug, done:done.ids.includes(r.id), n:tn[day.date + '_' + r.id] || '' })) };
+  const snap = { dow:dowOf(day.date), wake, types:day.types, note:day.note || '', rows:schedule().rows.map(r => ({ w:r.w, id:r.id, t:r.t, md:r.md || null, s:r.start, e:r.end, u:r.use, sug:!!r.sug, done:done.ids.includes(r.id), n:tn[day.date + '_' + r.id] || '' })) };
   const sig = day.date + JSON.stringify(snap);
   if (sig === lastSig) return;
   lastSig = sig;
   const h = store.get('hist', {});
   if (!snap.rows.some(r => r.u > 0 && !r.sug)){ if (h[day.date]){ delete h[day.date]; store.set('hist', h); } return; }
   h[day.date] = snap;
-  const keys = Object.keys(h).sort((a, b) => new Date(a) - new Date(b));
+  const keys = Object.keys(h).sort(cmpDay);
   while (keys.length > 90) delete h[keys.shift()];
   store.set('hist', h);
-  const oldest = new Date(keys[0]), nm = store.get('taskNotes', {});
+  const oldest = keys[0], nm = store.get('taskNotes', {});
   let ch = false;
-  for (const k in nm){ if (new Date(k.split('_')[0]) < oldest){ delete nm[k]; ch = true; } }
+  for (const k in nm){ if (k.split('_')[0] < oldest){ delete nm[k]; ch = true; } }
   if (ch) store.set('taskNotes', nm);
 }
 // ============================================================
@@ -792,7 +807,7 @@ function render(){
   if (viewDate === todayStr()) saveHist();
 }
 function draw(){
-  const w = wake, isToday = viewDate === todayStr(), NM = isToday ? nowM() : (new Date(viewDate) < new Date(todayStr()) ? 1e4 : -1);
+  const w = wake, isToday = viewDate === todayStr(), NM = isToday ? nowM() : (viewDate < todayStr() ? 1e4 : -1);
   $('#wake').value = toVal(w);
   const { rows, msg, tone } = schedule();
   let capMsg = '', capTone = 'warn';
@@ -984,14 +999,12 @@ $('#dnote').addEventListener('input', e => { day.note = e.target.value; saveDay(
 // ============================================================
 // IMPORT / EXPORT / RESET
 // ============================================================
+// Backup files keep the v2 layout (keys carry the yotei_v2_ prefix), so they stay readable by older versions.
+function backupData(){ const o = {}; Object.entries(store.dump()).forEach(([k, v]) => { o['yotei_v2_' + k] = v; }); return o; }
 function exportData(){
-  const o = {};
-  for (let i = 0; i < localStorage.length; i++){
-    const k = localStorage.key(i);
-    if (k && k.startsWith('yotei_v2_')) o[k] = localStorage.getItem(k);
-  }
+  const o = backupData();
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify({ app:'yotei', v:2, data:o })], { type:'application/json' }));
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ app:'yotei', v:3, data:o })], { type:'application/json' }));
   a.download = 'yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json';
   document.body.appendChild(a); a.click(); a.remove(); store.set('lastBackup', Date.now()); updateBackupInfo();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -999,20 +1012,20 @@ function exportData(){
 function importData(file){
   if (file.size > 8 * 1024 * 1024){ alert('That file is too large to be a Yotei backup. Nothing was changed.'); return; }
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
     let j = null;
     try{ j = JSON.parse(r.result); }catch{}
     const P = 'yotei_v2_';
     const chk = validateBackup(j, P);
     if (!chk.ok){ alert('That file can\'t be used as a Yotei backup because ' + chk.why + '. Nothing was changed.'); return; }
     if (!confirm('Replace everything in Yotei with this backup?')) return;
-    const old = {};
-    for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith(P)) old[k] = localStorage.getItem(k); }
-    try{
-      Object.keys(old).forEach(k => localStorage.removeItem(k));
-      Object.keys(j.data).forEach(k => localStorage.setItem(k, j.data[k]));
-    }catch{
-      try{ Object.keys(j.data).forEach(k => localStorage.removeItem(k)); Object.keys(old).forEach(k => localStorage.setItem(k, old[k])); }catch{}
+    const old = store.dump(); let data = {};
+    Object.keys(j.data).forEach(k => { data[k.slice(P.length)] = j.data[k]; });
+    if (needsDateMigration(data)) data = migrateDates(data);   // backups from v2 use the old day format
+    try{ await makeSnapshot('before-import'); }catch{}
+    try{ await replaceAll(data); }
+    catch{
+      try{ await replaceAll(old); }catch{}
       alert('Import failed, possibly because storage is full. Your previous data was restored.');
       return;
     }
@@ -1020,8 +1033,23 @@ function importData(file){
   };
   r.readAsText(file);
 }
-$('#rst').addEventListener('click', () => { if (confirm('Remove every routine task and reset all block names, colors and times? Your history is kept. You can undo this right after.')){ const snap = grab(); try{ ['blocks', 'wins', 'ovr', 'wovr'].forEach(k => localStorage.removeItem('yotei_v2_' + k)); }catch{} render(); showUndo('Routine reset', snap); } });
+$('#rst').addEventListener('click', () => { if (confirm('Remove every routine task and reset all block names, colors and times? Your history is kept. You can undo this right after.')){ const snap = grab(); ['blocks', 'wins', 'ovr', 'wovr'].forEach(k => store.remove(k)); render(); showUndo('Routine reset', snap); } });
 $('#exp').onclick = exportData;
+async function openSnaps(){
+  const why = { daily:'Daily', 'before-import':'Before an import', 'before-restore':'Before a restore', 'before-upgrade':'Before the update' };
+  let L = []; try{ L = await listSnapshots(); }catch{}
+  $('#snapList').innerHTML = L.length
+    ? L.map(x => '<div class="snapRow"><span>' + esc(new Date(x.at).toLocaleString(undefined, { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })) + ' · ' + esc(why[x.reason] || x.reason) + '</span><button data-id="' + esc(x.id) + '">Restore</button></div>').join('')
+    : '<p class="wn">' + (info().backend === 'idb' ? 'No snapshots yet. The first one is saved the next time you open Yotei on a new day.' : 'Snapshots are not available in this browser.') + '</p>';
+  $('#snapDlg').showModal();
+}
+$('#snapBtn').onclick = openSnaps;
+$('#snap_x').onclick = () => $('#snapDlg').close();
+$('#snapList').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-id]'); if (!b) return;
+  if (!confirm('Replace everything in Yotei with this snapshot? Your current data is saved as a snapshot first.')) return;
+  try{ await restoreSnapshot(b.dataset.id); location.reload(); }catch{ alert('Could not restore that snapshot. Nothing was changed.'); }
+});
 $('#imp').onclick = () => $('#impf').click();
 $('#impf').onchange = e => { const f = e.target.files[0]; if (f) importData(f); e.target.value = ''; };
 let lastToday = todayStr();
@@ -1039,7 +1067,7 @@ $('#todayBtn').addEventListener('click', () => goDate(todayStr()));
 $('#datePick').addEventListener('change', e => {
   if (!e.target.value) return;
   const [y, mo, dd] = e.target.value.split('-').map(Number);
-  goDate(new Date(y, mo - 1, dd).toDateString());
+  goDate(isoLocal(new Date(y, mo - 1, dd)));
 });
 // ============================================================
 // GESTURES — long-press to edit, swipe on the week strip
@@ -1069,8 +1097,8 @@ $('#weekstrip').addEventListener('pointerup', e => {
   swX = null;
   if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)){
     swFired = true;
-    const d = new Date(viewDate); d.setDate(d.getDate() + (dx < 0 ? 7 : -7));
-    goDate(d.toDateString());
+    const d = parseDay(viewDate); d.setDate(d.getDate() + (dx < 0 ? 7 : -7));
+    goDate(isoLocal(d));
   }
 });
 let dsX = null, dsY = null, dsT = 0, dsFired = 0;
@@ -1084,8 +1112,8 @@ $('.panel').addEventListener('pointerup', e => {
   if (drag || dragCand || Date.now() - dsT > 800) return;
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5){
     dsFired = Date.now();
-    const d = new Date(viewDate); d.setDate(d.getDate() + (dx < 0 ? 1 : -1));
-    goDate(d.toDateString());
+    const d = parseDay(viewDate); d.setDate(d.getDate() + (dx < 0 ? 1 : -1));
+    goDate(isoLocal(d));
   }
 });
 $('.panel').addEventListener('pointercancel', () => { dsX = null; });
@@ -1181,15 +1209,15 @@ let weekOff = 0;
 const dayPct = h => { const rs = (h.rows || []).filter(r => r.u > 0 && !r.sug); return rs.length ? rs.filter(r => r.done).length / rs.length : null; };
 function streaks(H){
   const ok = d => H[d] && (dayPct(H[d]) || 0) >= .7;
-  const days = Object.keys(H).sort((a, b) => new Date(a) - new Date(b));
+  const days = Object.keys(H).sort(cmpDay);
   let best = 0, len = 0, prev = null;
   days.forEach(d => {
-    if (ok(d)){ len = prev && Math.round((new Date(d) - prev) / 864e5) === 1 ? len + 1 : 1; prev = new Date(d); best = Math.max(best, len); }
+    if (ok(d)){ len = prev && Math.round((parseDay(d) - prev) / 864e5) === 1 ? len + 1 : 1; prev = parseDay(d); best = Math.max(best, len); }
     else { len = 0; prev = null; }
   });
-  let cur = 0; const c = new Date(todayStr());
-  if (!ok(c.toDateString())) c.setDate(c.getDate() - 1);
-  while (ok(c.toDateString())){ cur++; c.setDate(c.getDate() - 1); }
+  let cur = 0; const c = parseDay(todayStr());
+  if (!ok(isoLocal(c))) c.setDate(c.getDate() - 1);
+  while (ok(isoLocal(c))){ cur++; c.setDate(c.getDate() - 1); }
   return { cur, best };
 }
 function weekHtml(H){
@@ -1197,7 +1225,7 @@ function weekHtml(H){
   let cols = '', sum = 0, cnt = 0;
   for (let i = 0; i < 7; i++){
     const d = new Date(base); d.setDate(base.getDate() + i);
-    const ds = d.toDateString(), p = H[ds] ? dayPct(H[ds]) : null, pc = p === null ? null : Math.round(p * 100);
+    const ds = isoLocal(d), p = H[ds] ? dayPct(H[ds]) : null, pc = p === null ? null : Math.round(p * 100);
     if (pc !== null){ sum += pc; cnt++; }
     cols += '<button class="wcol' + (ds === todayStr() ? ' today' : '') + '" data-d="' + ds + '"><span class="wbar"><i style="height:' + (pc || 0) + '%"></i></span><span>' + d.toLocaleDateString(undefined, { weekday:'short' }) + '</span><span>' + (pc === null ? '-' : pc + '%') + '</span></button>';
   }
@@ -1283,7 +1311,7 @@ $('#tab-settings').addEventListener('change', e => {
 // ONE-OFF TASKS + INBOX, PAST-DAY RECORDS, ENERGY, CALENDAR IMPORT,
 // APPEARANCE, FIRST-RUN SETUP
 // ============================================================
-function snapMode(){ return new Date(viewDate) < new Date(todayStr()) && !day.live && !!store.get('hist', {})[viewDate]; }
+function snapMode(){ return viewDate < todayStr() && !day.live && !!store.get('hist', {})[viewDate]; }
 function snapRows(){
   if (!snapMode()) return null;
   return (store.get('hist', {})[viewDate].rows || []).map(r => ({ id:r.id, t:r.t, w:r.w, md:r.md || undefined, start:r.s, end:r.e, use:r.u, d:r.u, sug:!!r.sug, post:r.w !== 'sleep', p:'core', snap:true }));
@@ -1354,7 +1382,7 @@ function parseICS(txt){
   return ev;
 }
 function importICS(txt){
-  const today = new Date(todayStr()), lo = new Date(today), hi = new Date(today);
+  const today = parseDay(todayStr()), lo = new Date(today), hi = new Date(today);
   lo.setDate(lo.getDate() - 30); hi.setDate(hi.getDate() + 90);
   const r = { added:0, allDay:0, rec:0, out:0 }, WB = wins();
   parseICS(txt).forEach(e => {
@@ -1362,7 +1390,7 @@ function importICS(txt){
     if (e.s.allDay){ r.allDay++; return; }
     if (e.r) r.rec++;
     if (e.s.d < lo || e.s.d > hi){ r.out++; return; }
-    const ds = e.s.d.toDateString(), start = e.s.d.getHours() * 60 + e.s.d.getMinutes();
+    const ds = isoLocal(e.s.d), start = e.s.d.getHours() * 60 + e.s.d.getMinutes();
     let dur = e.e && e.e.d ? Math.round((e.e.d - e.s.d) / 60000) : 30; if (!(dur > 0)) dur = 30; dur = Math.min(dur, 600);
     const p = plans[ds] || planFor(ds) || { w:defWake(), d:[], t:{}, a:false, n:'' }, n = start - p.w;
     let w = 'climb1'; for (const k of Object.keys(WB)) if (n >= WB[k].from && n < WB[k].to) w = k;
@@ -1437,7 +1465,7 @@ function drawScChips(){
 }
 function askScope(type, ctx){
   scopeCtx = { type, ...ctx }; scDays = []; scModes = [];
-  const when = new Date(viewDate).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+  const when = parseDay(viewDate).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
   $('#sc_h').textContent = type === 'reset' ? 'Reset this block for' : type === 'delete' ? 'Delete this task for' : type === 'add' ? 'Add this task to' : 'Apply this change to';
   $('#sc_opts').innerHTML = [['day', 'Only this day (' + when + ')'], ['from', 'This day and the days after'], ['all', 'All days']].map(a => '<button data-sc="' + a[0] + '">' + a[1] + '</button>').join('');
   $('#sc_modes').style.display = (ctx.l === 'pre' || ctx.l === 'night') ? '' : 'none';
@@ -1447,7 +1475,7 @@ function applyScope(sc){ const _s = grab(), ty = scopeCtx && scopeCtx.type; need
 function applyScope0(sc){
   const c = scopeCtx; if (!c) return;
   if (c.l === 'win'){ applyWinScope(sc, c); return; }
-  const iso = isoLocal(new Date(viewDate)), filt = {}, OV = store.get('ovr', {}), arr = clone(getBlocks(c.l));
+  const iso = viewDate, filt = {}, OV = store.get('ovr', {}), arr = clone(getBlocks(c.l));
   if (scDays.length) filt.days = scDays.slice().sort();
   if (scModes.length && (c.l === 'pre' || c.l === 'night')) filt.modes = scModes.slice();
   const hasFilt = !!(filt.days || filt.modes), push = (id, e) => { (OV[id] = OV[id] || []).push(e); };
@@ -1501,14 +1529,14 @@ function addOneOff(ds, o){
 let mvMode = 'task', shBy = 15;
 function openMv(mode){
   mvMode = mode;
-  const t = new Date(viewDate); t.setDate(t.getDate() + 1);
+  const t = parseDay(viewDate); t.setDate(t.getDate() + 1);
   $('#mv_d').value = isoLocal(t); $('#mv_t').value = '';
   $('#mv_h').textContent = mode === 'day' ? 'Copy this day to' : 'Move or copy to';
   ['mv_tw', 'mv_inbox', 'mv_copy'].forEach(i => { $('#' + i).style.display = mode === 'day' ? 'none' : ''; });
   $('#mv_go').textContent = mode === 'day' ? 'Copy day' : 'Move';
   $('#mvDlg').showModal();
 }
-function mvDate(){ const v = $('#mv_d').value; if (!v) return null; const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d).toDateString(); }
+function mvDate(){ const v = $('#mv_d').value; if (!v) return null; const [y, m, d] = v.split('-').map(Number); return isoLocal(new Date(y, m - 1, d)); }
 function mvDo(kind){ const _s = grab(); needLive(); mvDo0(kind); showUndo(kind === 'copy' ? 'Copied' : kind === 'inbox' ? 'Moved to inbox' : 'Moved', _s); }
 function mvDo0(kind){
   const r = schedule().rows.find(x => x.id === sheetCtx.id); if (!r) return;
@@ -1520,7 +1548,7 @@ function mvDo0(kind){
   if (ds) o.w = o.fixed !== undefined ? winFor(o.fixed, (planFor(ds) || {}).w ?? defWake()) : (r.w || 'climb1');
   const removeHere = () => {
     if (sheetCtx.l === 'oo') day.oneoffs = (day.oneoffs || []).filter(x => x.id !== sheetCtx.id);
-    else { const OV = store.get('ovr', {}), iso = isoLocal(new Date(viewDate)); (OV[sheetCtx.id] = OV[sheetCtx.id] || []).push({ from:iso, to:iso, patch:null }); store.set('ovr', OV); }
+    else { const OV = store.get('ovr', {}), iso = viewDate; (OV[sheetCtx.id] = OV[sheetCtx.id] || []).push({ from:iso, to:iso, patch:null }); store.set('ovr', OV); }
   };
   if (kind === 'inbox'){ const l = store.get('inbox', []); l.push({ id:'i' + Date.now().toString(36), t:r.t }); store.set('inbox', l); removeHere(); }
   else { if (kind === 'move') removeHere(); addOneOff(ds, o); }
@@ -1529,7 +1557,7 @@ function mvDo0(kind){
 function copyDay(src, dst){
   const p = src === viewDate ? { w:wake, t:day.types, a:day.away, o:day.oneoffs || [], s:day.shift } : (planFor(src) || {});
   plans[dst] = { w:p.w ?? defWake(), d:[], t:{ ...(p.t || {}) }, a:!!p.a, n:'', p:null, o:(p.o || []).map(x => ({ ...x, id:x.id + 'c' + Math.random().toString(36).slice(2, 5) })), l:false, s:p.s || null };
-  const OV = store.get('ovr', {}), si = isoLocal(new Date(src)), di = isoLocal(new Date(dst));
+  const OV = store.get('ovr', {}), si = src, di = dst;
   Object.keys(OV).forEach(id => OV[id].filter(e => e.from === si && e.to === si).forEach(e => OV[id].push({ ...e, from:di, to:di })));
   store.set('ovr', OV); store.set('plans', plans);
 }
@@ -1570,16 +1598,16 @@ function toast(msg, label, fn){
   $('#toast').classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $('#toast').classList.remove('show'), 7000);
 }
 const UNDO_KEYS = ['blocks', 'ovr', 'plans', 'inbox', 'taskNotes', 'hist', 'wins', 'wovr'];
-function grab(){ const s = {}; UNDO_KEYS.forEach(k => { s[k] = localStorage.getItem('yotei_v2_' + k); }); return s; }
+function grab(){ const s = {}; UNDO_KEYS.forEach(k => { s[k] = store.raw(k); }); return s; }
 function showUndo(msg, s){
   toast(msg, 'Undo', () => {
-    UNDO_KEYS.forEach(k => { if (s[k] === null) localStorage.removeItem('yotei_v2_' + k); else localStorage.setItem('yotei_v2_' + k, s[k]); });
+    UNDO_KEYS.forEach(k => store.setRaw(k, s[k]));
     plans = store.get('plans', {}); loadDay(viewDate); render();
   });
 }
 
 function usualTypes(ds){
-  const m = store.get('usual', {})[new Date(ds).getDay()]; if (!m) return {};
+  const m = store.get('usual', {})[dowOf(ds)]; if (!m) return {};
   const t = {}; ['climb1', 'peak', 'trough', 'climb2', 'wmz'].forEach(k => { t[k] = k === 'wmz' && m === 'school' ? 'home' : m; }); return t;
 }
 function drawUsual(){
@@ -1624,7 +1652,7 @@ function ratingsHtml(){
 }
 
 function taskInsight(id){
-  const H = store.get('hist', {}), days = Object.keys(H).sort((a, b) => new Date(b) - new Date(a));
+  const H = store.get('hist', {}), days = Object.keys(H).sort((a, b) => cmpDay(b, a));
   let tot = 0, dn = 0, streak = 0, live = true;
   days.forEach(d => {
     const r = (H[d].rows || []).find(x => x.id === id && x.u > 0 && !x.sug); if (!r) return;
@@ -1653,7 +1681,7 @@ function reviewHtml(H){
   let sum = 0, cnt = 0, bestD = null, bestP = -1; const skip = {}, win = {};
   for (let i = 0; i < 7; i++){
     const d = new Date(base); d.setDate(base.getDate() + i);
-    const h = H[d.toDateString()]; if (!h) continue;
+    const h = H[isoLocal(d)]; if (!h) continue;
     const p = dayPct(h); if (p === null) continue;
     sum += p; cnt++; if (p > bestP){ bestP = p; bestD = d; }
     (h.rows || []).forEach(r => {
@@ -1672,9 +1700,7 @@ function reviewHtml(H){
 }
 
 function backupJson(){
-  const o = {};
-  for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith('yotei_v2_')) o[k] = localStorage.getItem(k); }
-  return JSON.stringify({ app:'yotei', v:2, data:o });
+  return JSON.stringify({ app:'yotei', v:3, data:backupData() });
 }
 async function shareBackup(){
   const f = new File([backupJson()], 'yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', { type:'application/json' });
@@ -1691,7 +1717,7 @@ let drag = null, dragCand = null;
 const dragMove = e => { const g = $('#dragGhost'); g.style.left = (e.clientX - 20) + 'px'; g.style.top = (e.clientY - 46) + 'px'; };
 function beginDrag(row, e){
   drag = { id:row.dataset.id, l:row.dataset.l };
-  const base = new Date(viewDate);
+  const base = parseDay(viewDate);
   $('#dropBar').innerHTML = '<button data-inbox="1">Inbox</button>' + [1, 2, 3, 4, 5, 6, 7].map(i => { const d = new Date(base); d.setDate(base.getDate() + i); return '<button data-day="' + isoLocal(d) + '">' + d.toLocaleDateString(undefined, { weekday:'short' }) + ' ' + d.getDate() + '</button>'; }).join('');
   $('#dropBar').classList.add('show');
   const g = $('#dragGhost'); g.textContent = row.querySelector('.ttl').textContent.replace(/\s+/g, ' ').trim(); g.style.display = 'block'; dragMove(e);
@@ -1726,7 +1752,7 @@ function dragEnd(e, cancel){
   if (chip){
     sheetCtx = { l:d.l, id:d.id };
     if (chip.dataset.inbox) mvDo('inbox');
-    else { if (chip.dataset.day === isoLocal(new Date(viewDate))) return; $('#mv_d').value = chip.dataset.day; $('#mv_t').value = ''; mvDo('move'); }
+    else { if (chip.dataset.day === viewDate) return; $('#mv_d').value = chip.dataset.day; $('#mv_t').value = ''; mvDo('move'); }
   } else if (tgt && tgt.dataset.id !== d.id) reorderBlock(d.l, d.id, tgt.dataset.id, tgt.dataset.l);
 }
 document.addEventListener('pointerup', e => dragEnd(e, false));
@@ -1839,7 +1865,7 @@ const WIN_DEF = Object.fromEntries(Object.entries(WIN_STYLE).map(([k, v]) => [k,
 const WIN_ICON_DEF = Object.fromEntries(Object.entries(WIN_STYLE).map(([k, v]) => [k, v.i]));
 function applyWinColors(){ const W = wins(); for (const k in WIN_STYLE){ WIN_STYLE[k].c = safeCol(W[k].color) || WIN_DEF[k]; WIN_STYLE[k].i = W[k].icon || WIN_ICON_DEF[k]; } }
 function applyWinScope(sc, c){
-  const iso = isoLocal(new Date(viewDate)), filt = {};
+  const iso = viewDate, filt = {};
   if (scDays.length) filt.days = scDays.slice().sort();
   const o = store.get('wins', {}), W = store.get('wovr', {}), k = c.id, hasFilt = !!filt.days, base = winBase(k);
   const patch = c.type === 'reset' ? { name:base.name, note:base.note, from:base.from, to:base.to, color:null, icon:null } : diffBlock(c.old, c.b);
@@ -1867,10 +1893,10 @@ function delHist(ds){
 }
 function clearHist(){
   if (!confirm('Delete the saved records of all past days, including their done marks and task notes? Your routines are kept.')) return;
-  const _s = grab(), t = new Date(todayStr());
+  const _s = grab(), t = todayStr();
   store.set('hist', {});
-  Object.keys(plans).forEach(d => { if (new Date(d) < t) delete plans[d]; }); store.set('plans', plans);
-  const tn = store.get('taskNotes', {}); Object.keys(tn).forEach(k => { if (new Date(k.split('_')[0]) < t) delete tn[k]; }); store.set('taskNotes', tn);
+  Object.keys(plans).forEach(d => { if (d < t) delete plans[d]; }); store.set('plans', plans);
+  const tn = store.get('taskNotes', {}); Object.keys(tn).forEach(k => { if (k.split('_')[0] < t) delete tn[k]; }); store.set('taskNotes', tn);
   lastSig = ''; loadDay(viewDate); render(); showUndo('History deleted', _s);
 }
 $('#histbox').addEventListener('click', e => {
@@ -1884,14 +1910,14 @@ $('#clrHist').addEventListener('click', clearHist);
 // STRUCTURED-STYLE SHELL: header, week dots, add button
 // ============================================================
 function drawHdr(){
-  const t = document.body.dataset.tab || 'home', d = new Date(viewDate), el = $('#hdrTitle'); if (!el) return;
+  const t = document.body.dataset.tab || 'home', d = parseDay(viewDate), el = $('#hdrTitle'); if (!el) return;
   if (t === 'home') el.innerHTML = esc(d.toLocaleDateString(undefined, { month:'long' })) + ' <em>' + d.getFullYear() + '</em>';
   else el.textContent = ({ inbox:'Inbox', history:'History', settings:'Settings' })[t] || 'Yotei';
 }
 function dayColors(ds){
   let rows = [];
   if (ds === viewDate) rows = schedule().rows;
-  else { const sv = { wake, day, done }; try{ loadDay(ds); rows = build(new Date(ds).getDay()).rows; }catch{} finally{ wake = sv.wake; day = sv.day; done = sv.done; } }
+  else { const sv = { wake, day, done }; try{ loadDay(ds); rows = build(dowOf(ds)).rows; }catch{} finally{ wake = sv.wake; day = sv.day; done = sv.done; } }
   const out = [], seen = new Set();
   rows.forEach(r => {
     if (!(r.use > 0) || r.sug || out.length >= 3) return;
@@ -1921,8 +1947,8 @@ $('#clrAll').addEventListener('click', () => { $('#clr_ok').checked = false; $('
 $('#clr_ok').addEventListener('change', e => { $('#clr_go').disabled = !e.target.checked; });
 $('#clr_x').onclick = () => $('#clrDlg').close();
 $('#clr_exp').onclick = () => shareBackup();
-$('#clr_go').onclick = () => {
-  Object.keys(localStorage).filter(k => k.startsWith('yotei_v2_')).forEach(k => localStorage.removeItem(k));
+$('#clr_go').onclick = async () => {
+  try{ await clearAll(); }catch{}
   try{ sessionStorage.clear(); }catch{}
   location.replace(location.pathname);
 };
@@ -1931,7 +1957,7 @@ $('#clr_go').onclick = () => {
 // SAFETY, ACCESSIBILITY, EMPTY STATE
 // ============================================================
 function safeCol(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.trim())) ? c.trim() : null; }
-Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks' })
+Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks' })
   .forEach(([id, l]) => { const d = document.getElementById(id); if (d) d.setAttribute('aria-label', l); });
 $('#tl').insertAdjacentHTML('beforebegin', '<div class="sleep emptyCard" id="emptyCard" hidden><h2>Start with your first task</h2><p class="wn">Add what you want to do today. A task added for all days repeats every day. You can use the + button any time.</p><button class="add" id="emptyAdd">Add a task</button></div>');
 function drawEmpty(){
@@ -1997,7 +2023,7 @@ function migrateV3(){  // add the new Away suggestions to an Away list you alrea
 function updateBackupInfo(){
   const t = store.get('lastBackup', 0), d = t ? Math.floor((Date.now() - t) / 864e5) : null;
   const needs = (d === null || d >= 7) && Object.keys(store.get('hist', {})).length >= 3;
-  let bytes = 0; for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith('yotei_v2_')) bytes += (k.length + (localStorage.getItem(k) || '').length) * 2; }
+  const bytes = estimateBytes();
   $('#bkInfo').textContent = (d === null ? 'No backup yet.' : d === 0 ? 'Last backup: today.' : 'Last backup: ' + d + ' day' + (d === 1 ? '' : 's') + ' ago.') + ' Stored on this device: ' + Math.max(1, Math.round(bytes / 1024)) + ' KB.';
   $('#settingsBtn').classList.toggle('nudge', needs); document.querySelector('.tabs [data-tab=settings]').classList.toggle('nudge', needs);
   $('#settingsBtn').setAttribute('aria-label', needs ? 'Settings, backup suggested' : 'Settings');
@@ -2007,5 +2033,7 @@ if ($('#settingsBtn').classList.contains('nudge') && store.get('bkAsk', '') !== 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
 if ('serviceWorker' in navigator){
-  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+  // The page may already have finished loading by the time this script runs (startup waits for saved data).
+  const registerSw = () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); };
+  if (document.readyState === 'complete') registerSw(); else window.addEventListener('load', registerSw);
 }

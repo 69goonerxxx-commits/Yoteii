@@ -1,5 +1,5 @@
-const CACHE = 'yotei-v3-dev-3';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png', './icon-maskable-512.png', './icon.svg', './styles.css', './main.js', './util.js', './icons.js', './about.js', './templates.js', './science.js', './engine.js', './validate.js'];
+const CACHE = 'yotei-v3-dev-5';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png', './icon-maskable-512.png', './icon.svg', './styles.css', './main.js', './util.js', './icons.js', './about.js', './templates.js', './science.js', './engine.js', './validate.js', './storage.js', './dates.js', './migrate.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE)

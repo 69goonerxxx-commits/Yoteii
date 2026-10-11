@@ -518,3 +518,6 @@ html[data-text=large] .biIn{zoom:1.15}
 #ip_tabs .fa{width:22px;height:22px}
 .faProbe{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 #iconPick .ipRow button{position:relative}
+
+.snapRow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.snapRow span{font-size:14px}

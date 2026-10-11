@@ -1,9 +1,10 @@
 // Backup validation: decides whether an imported file is safe to load, without touching storage.
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 3;
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 const num = v => typeof v === 'number' && Number.isFinite(v);
-const optNum = (o, k) => o[k] === undefined || num(o[k]);
-const optStr = (o, k) => o[k] === undefined || typeof o[k] === 'string';
+// A missing or empty (null) value is fine; a value of the wrong type is not.
+const optNum = (o, k) => o[k] === undefined || o[k] === null || num(o[k]);
+const optStr = (o, k) => o[k] === undefined || o[k] === null || typeof o[k] === 'string';
 const arrOfObj = a => Array.isArray(a) && a.every(isObj);
 
 // One checker per known storage key. Each returns true when the parsed value has a safe shape.
@@ -17,8 +18,11 @@ const CHECKS = {
   usual: v => isObj(v) && Object.values(v).every(m => typeof m === 'string'),
   caps: v => isObj(v) && optNum(v, 'soft') && optNum(v, 'hard'),
   clock: v => v === '12' || v === '24',
-  wake: num, schemaV: num, lastBackup: num, bkAsk: num,
+  wake: v => num(v) || isObj(v),               // older versions stored { home: minutes }
+  schemaV: num, lastBackup: num,
+  bkAsk: v => typeof v === 'string',           // the day the backup reminder was last shown
   setup: v => typeof v === 'boolean',
+  dateFmt: v => v === 'iso',
 };
 
 // Returns { ok: true } or { ok: false, why: 'short reason a person can read' }.
