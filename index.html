@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Yotei</title>
+<meta name="theme-color" content="#1c1c1e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Yotei">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="manifest" href="./manifest.webmanifest">
+<script>try{var D=document.documentElement,T=JSON.parse(localStorage.getItem('yotei_v2_theme')||'"dark"');if(T==='auto')T=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';D.dataset.theme=T;D.dataset.text=JSON.parse(localStorage.getItem('yotei_v2_text')||'"normal"')}catch(e){}</script>
+<link rel="icon" type="image/svg+xml" href="./icon.svg">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+<div class="app">
+  <div class="top"><h1 id="hdrTitle">Yotei</h1><div class="hdrR"><div class="dateWrap hdrCal"><button class="date" id="dateBtn" aria-label="Pick a date"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></button><input type="date" id="datePick" aria-label="Pick a date" tabindex="-1"></div></div><span id="date" class="srOnly"></span><span id="clk"></span><button id="settingsBtn" aria-label="Settings">⚙</button></div>
+  <section id="tab-inbox" class="tab" hidden></section>
+  <section id="tab-home" class="tab">
+    <div class="weekstrip" id="weekstrip"></div>
+    <button class="add" id="todayBtn" hidden>Back to today</button>
+    <button class="add" id="liveBtn" hidden>Rebuild this day from my current routines</button>
+    
+    
+    <div class="panel">
+    <div class="wakerow">
+      <label for="wake">Wake time</label><input type="time" id="wake"><button id="reset">↺</button><button class="add" id="awayBtn" aria-pressed="false"></button>
+    </div>
+    <p class="msg" id="msg" role="status"></p>
+    <p class="prog" id="prog"></p>
+    <div id="nowBanner"><span class="nb-i" id="nb-i"></span><div><div class="nb-t" id="nb-t" aria-live="polite"></div><div class="nb-s" id="nb-s"></div></div></div>
+    <div id="tl"></div>
+    <div class="sleep">
+      <h2>Note for this day</h2>
+      <p class="wn" id="awayHint"></p>
+      <textarea id="dnote" rows="3" placeholder="Anything worth remembering about today"></textarea>
+    </div>
+    </div>
+  </section>
+
+  <section id="tab-history" class="tab" hidden>
+    <div id="trends"></div>
+    <div id="histbox"></div>
+  </section>
+
+  <section id="tab-settings" class="tab" hidden>
+    <div class="sleep"><h2>Editing</h2><p class="wn">Tap any task to edit, move, copy or delete it, and press and hold a task to drag it. Turn this on to also show + Add task, Edit block and drag handles, and to open the editor straight from a tap.</p><button class="add" id="editToggle">Turn on editing</button></div>
+    <div class="sleep"><h2>Backup</h2><p class="wn">Your tasks, blocks and history live in this browser only. Export a copy so clearing the browser does not erase them.</p><p class="wn" id="bkInfo"></p><div class="ea"><button id="exp">Export</button><button id="shareBk">Share</button><button id="imp">Import</button><button id="clrAll" class="danger">Clear data</button></div><input type="file" id="impf" accept=".json,application/json" hidden></div>
+    <div class="sleep">
+      <h2>Sleep caps</h2>
+      <div id="sleep"></div>
+    </div>
+    <div class="sleep">
+      <h2>Science sources</h2>
+      <p class="wn">Tap a block header on the timeline to read what is going on in that window. The research behind it is listed here.</p>
+      <details class="srcDet"><summary>Show all sources</summary><ol id="srcList"></ol></details>
+    </div>
+    <div class="sleep">
+      <h2>Reset</h2>
+      <p class="wn">Remove every routine task you added and restore the block names, colors and times. Your history is kept. This cannot be undone.</p>
+      <button class="add" id="rst">Remove all tasks and reset blocks</button>
+    </div>
+  </section>
+
+  <nav class="tabs" role="tablist">
+    <button data-tab="inbox" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4zM4 13h5l1 2h4l1-2h5"/></svg></span><span>Inbox</span></button>
+    <button data-tab="home" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></span><span>Timeline</span></button>
+    <button data-tab="history" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span>History</span></button>
+    <button data-tab="settings" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></span><span>Settings</span></button>
+  </nav>
+</div>
+<button id="fab" aria-label="Add"></button>
+<dialog id="fabMenu"><div class="fabIn"></div></dialog>
+<dialog id="ed"><div class="ef">
+  <div class="edHead"><button type="button" id="e_x2" aria-label="Close">&#10005;</button><h2 id="e_title">Edit <em>Task</em></h2></div>
+  <label><span id="e_tlab">Task</span><div class="taskRow"><input id="e_t"><button type="button" id="e_iconBtn" class="iconPreview" aria-label="Choose icon">+</button><input type="hidden" id="e_icon"></div></label>
+  <label id="e_wrap" style="display:none">Window<select id="e_w"></select></label>
+  <label>What color?<div class="colorRow" id="e_colors" role="radiogroup" aria-label="Color"></div><input type="hidden" id="e_color"></label>
+  <label class="taskOnly">Kind<select id="e_k">
+    <option value="core">Core (shrinks last)</option><option value="flex">Flexible (shrinks first)</option><option value="opt">Optional (cut first)</option>
+    <option value="fixedlen">Fixed length</option><option value="sug">Suggestion, no time</option><option value="open">Open slot</option>
+  </select><span class="kindHint" id="e_khint"></span></label>
+  <label class="taskOnly" id="e_howlong">How long?<div class="chips" id="e_presets">
+    <button type="button" data-m="5">5m</button><button type="button" data-m="15">15m</button><button type="button" data-m="20">20m</button>
+    <button type="button" data-m="30">30m</button><button type="button" data-m="45">45m</button><button type="button" data-m="60">1h</button><button type="button" data-m="90">1.5h</button>
+  </div></label>
+  <div class="er taskOnly" id="e_se"><label>Starts<input id="e_s" type="time"></label><label>Ends<input id="e_e" type="time"></label></div>
+  <div class="er taskOnly" id="e_mrow"><label>Minutes<input id="e_d" type="number" min="0"></label><label id="e_mwrap">Shortest<input id="e_m" type="number" min="0"></label></div>
+  <label class="fxRow taskOnly" id="e_fxrow"><input type="checkbox" id="e_fx"><span class="fxTxt"><b>Fixed time</b><small>Pins the task to its Start time and it never moves. Leave off and Start is only a preferred time: the task can start later if the tasks before it run long.</small></span></label>
+  <div class="days taskOnly" id="e_days"></div>
+  <div class="er winOnly"><label>Starts<input id="e_bs" type="time"></label><label>Ends<input id="e_be" type="time"></label></div>
+  <label><span id="e_dlab">Details</span><textarea id="e_details" rows="2" placeholder="What this task is, or how to do it"></textarea></label>
+  <label class="taskOnly">Subtasks, one per line<textarea id="e_p" rows="3"></textarea></label>
+  <p class="edErr" id="e_err" role="alert" hidden></p>
+  <div class="ea"><button id="e_del">Delete</button><button id="e_up">Up</button><button id="e_dn">Down</button><button id="e_x">Cancel</button><button id="e_ok">Save</button></div>
+</div></dialog>
+<dialog id="iconPick"><div class="ef">
+  <div class="ipTop"><button type="button" id="ip_x" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button><div class="ipSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><input id="ip_q" type="search" placeholder="Search" autocomplete="off"></div></div>
+  <div id="ip_scroll"><div id="ip_groups"></div>
+  <div class="ipGroup" id="ip_custom"><p class="lbl"><i class="gi"></i><span>Custom</span></p><label>Type a key like 'book', or paste an emoji<input id="e_icon_custom" maxlength="16"></label><button type="button" id="ip_ok">Use custom</button></div></div>
+  <div id="ip_tabs" role="tablist" aria-label="Icon categories"></div>
+</div></dialog>
+<div id="toast" role="status" aria-live="polite"><span id="toastMsg"></span><button id="toastBtn"></button></div>
+<div id="dropBar"></div><div id="dragGhost"></div>
+<dialog id="colorSheet"><div class="csIn">
+  <div class="csHandle" id="cs_handle"></div>
+  <div class="csRecent" id="cs_recent"></div>
+  <div class="csWheel" id="cs_wheel"><canvas id="cs_canvas" width="560" height="560"></canvas><i id="cs_knob"></i></div>
+  <div class="csBright" id="cs_bright"><i id="cs_bthumb"></i></div>
+  <div class="csPrev" id="cs_prev"></div>
+  <button class="add" id="cs_done">Done</button>
+</div></dialog>
+<dialog id="scopeDlg"><div class="ef">
+  <h2 id="sc_h"></h2>
+  <p class="wn">Optional: limit it to certain days. Leave empty to cover every day.</p>
+  <div class="days" id="sc_days"></div>
+  <div class="chips" id="sc_modes"></div>
+  <div class="scOpts" id="sc_opts"></div>
+  <div class="ea"><button id="sc_x">Cancel</button></div>
+</div></dialog>
+<dialog id="mvDlg"><div class="ef">
+  <h2 id="mv_h">Move or copy to</h2>
+  <label>Day<input type="date" id="mv_d"></label>
+  <label id="mv_tw">At (optional)<input type="time" id="mv_t"></label>
+  <div class="ea"><button id="mv_inbox">To inbox</button><button id="mv_copy">Copy</button><button id="mv_go">Move</button></div>
+  <div class="ea"><button id="mv_x">Cancel</button></div>
+</div></dialog>
+<dialog id="shDlg"><div class="ef">
+  <h2>Running late?</h2>
+  <p class="wn">Pushes the rest of the day later. Fixed-time tasks stay where they are.</p>
+  <label>Push later by<div class="chips" id="sh_chips"><button type="button" data-m="15">15m</button><button type="button" data-m="30">30m</button><button type="button" data-m="45">45m</button><button type="button" data-m="60">1h</button></div></label>
+  <label>Starting from<input type="time" id="sh_from"></label>
+  <div class="ea"><button id="sh_clear">Clear</button><button id="sh_x">Cancel</button><button id="sh_ok">Apply</button></div>
+</div></dialog>
+<dialog id="clrDlg"><div class="ef">
+  <h2>Clear all data?</h2>
+  <p class="wn">This permanently deletes everything Yotei has saved on this device: routines, blocks, days, history, notes, inbox and settings. The app itself stays installed. This cannot be undone.</p>
+  <button class="add" id="clr_exp">Export a backup first</button>
+  <label class="chk"><input type="checkbox" id="clr_ok"> I understand this deletes everything</label>
+  <div class="ea"><button id="clr_x">Cancel</button><button id="clr_go" class="danger" disabled>Clear data</button></div>
+</div></dialog>
+<dialog id="setupDlg"><div class="ef">
+  <h2>Welcome to Yotei</h2>
+  <p class="wn">A few quick choices to get started. You can change all of it later in Settings.</p>
+  <label>When do you usually wake up?<input type="time" id="su_wake" value="05:00"></label>
+  <label>Energy rhythm<select id="su_chrono"><option value="early">Early bird</option><option value="normal" selected>In between</option><option value="late">Night owl</option></select></label>
+  <label>Morning routine<select id="su_pre"></select></label>
+  <label>Night routine<select id="su_night"></select></label>
+  <div class="ea"><button id="su_skip">Skip</button><button id="su_ok">Start</button></div>
+</div></dialog>
+<dialog id="runDlg"><div class="ef" style="text-align:center">
+  <div class="rStep" id="runStep"></div>
+  <div class="rIcon" id="runIcon"></div>
+  <h2 id="runTitle"></h2>
+  <p class="wn" id="runDet"></p>
+  <div class="rTime" id="runTime">0:00</div>
+  <div class="rBar"><i id="runBar"></i></div>
+  <div class="ea"><button id="runPause">Pause</button><button id="runPlus">+1 min</button><button id="runSkip">Skip</button></div>
+  <div class="ea"><button id="runClose">Close</button><button id="runDone">Done</button></div>
+</div></dialog>
+<dialog id="blockInfo"><div class="biIn"><div class="csHandle" id="bi_handle"></div><div class="biBody" id="bi_body"></div></div></dialog>
+<dialog id="taskSheet"><div class="tsIn">
+  <div class="csHandle" id="ts_handle"></div>
+  <div class="tsHead2"><span class="tsIcon" id="ts_icon"></span><div class="tsHT"><div class="tsWhen" id="ts_time"></div><b id="ts_title"></b></div></div>
+  <div class="tsSep"></div>
+  <div class="tsBody"><p id="ts_details"></p><p class="tsIns" id="ts_insight" hidden></p></div>
+  <div class="tsSep"></div>
+  <div class="tsTiles"><button id="ts_del"></button><button id="ts_dup"></button><button id="ts_done"></button></div>
+  <div class="tsTiles"><button id="ts_noteb"></button><button id="ts_timer"></button><button id="ts_move"></button></div>
+  <button id="ts_edit" class="tsEdit"></button>
+</div></dialog>
+<dialog id="stepsSheet"><div class="ef">
+  <b id="ss_title"></b>
+  <div id="ss_list"></div>
+  <div class="ea"><button id="ss_all">Tick all</button><button id="ss_close">Close</button></div>
+</div></dialog>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
