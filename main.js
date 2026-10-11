@@ -1,4 +1,5 @@
 import { esc } from './util.js';
+import { validateBackup } from './validate.js';
 import { isoLocal, applyOvr, typeOfIn, buildSchedule } from './engine.js';
 import { guessIcon, ICONS, iconMarkup, ICON_GROUPS, ICON_TAGS } from './icons.js';
 import { APP_VERSION, FEATURES, LIMITS, CHANGELOG } from './about.js';
@@ -22,8 +23,14 @@ import { BLOCK_INFO, SCI_SRC, PRESS_PTS, CIRC_PTS } from './science.js';
 const $ = s => document.querySelector(s);
 const store = {
   get(k, d){ try{ const v = localStorage.getItem('yotei_v2_'+k); return v === null ? d : JSON.parse(v); }catch{ return d; } },
-  set(k, v){ try{ localStorage.setItem('yotei_v2_'+k, JSON.stringify(v)); }catch{} }
+  set(k, v){ try{ localStorage.setItem('yotei_v2_'+k, JSON.stringify(v)); return true; }catch{ storeFailed(); return false; } }
 };
+// Saving can fail (storage full, or blocked in private mode). Say so, at most once every 15 seconds, and offer a backup.
+let lastSaveWarn = 0;
+function storeFailed(){
+  const now = Date.now(); if (now - lastSaveWarn < 15000) return; lastSaveWarn = now;
+  if (document.getElementById('toastMsg')) toast("Couldn't save your changes. Storage may be full or blocked. Back up now so nothing is lost.", 'Back up', exportData);
+}
 const DEF_WAKE = 300;                      // 5:00 AM, in minutes after midnight
 const CAP = Object.assign({ soft: 22*60, hard: 23*60 }, store.get('caps', {}));  // defaults 10 PM soft, 11 PM hard; editable in Settings
 
@@ -990,21 +997,14 @@ function exportData(){
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 function importData(file){
+  if (file.size > 8 * 1024 * 1024){ alert('That file is too large to be a Yotei backup. Nothing was changed.'); return; }
   const r = new FileReader();
   r.onload = () => {
     let j = null;
     try{ j = JSON.parse(r.result); }catch{}
     const P = 'yotei_v2_';
-    const ok = j && j.app === 'yotei' && j.data && typeof j.data === 'object' && Object.keys(j.data).length &&
-      Object.entries(j.data).every(([k, v]) => {
-        if (!k.startsWith(P) || typeof v !== 'string') return false;
-        try{
-          const p = JSON.parse(v);
-          if (k === P + 'blocks') return p && typeof p === 'object' && Object.values(p).every(a => Array.isArray(a) && a.every(b => b && typeof b === 'object'));
-          return true;
-        }catch{ return false; }
-      });
-    if (!ok){ alert('That file is not a valid Yotei backup. Nothing was changed.'); return; }
+    const chk = validateBackup(j, P);
+    if (!chk.ok){ alert('That file can\'t be used as a Yotei backup because ' + chk.why + '. Nothing was changed.'); return; }
     if (!confirm('Replace everything in Yotei with this backup?')) return;
     const old = {};
     for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith(P)) old[k] = localStorage.getItem(k); }
@@ -1020,7 +1020,7 @@ function importData(file){
   };
   r.readAsText(file);
 }
-$('#rst').addEventListener('click', () => { if (confirm('Remove every routine task and reset all block names, colors and times? Your history is kept.')){ try{ ['blocks', 'wins', 'ovr', 'wovr'].forEach(k => localStorage.removeItem('yotei_v2_' + k)); }catch{} render(); } });
+$('#rst').addEventListener('click', () => { if (confirm('Remove every routine task and reset all block names, colors and times? Your history is kept. You can undo this right after.')){ const snap = grab(); try{ ['blocks', 'wins', 'ovr', 'wovr'].forEach(k => localStorage.removeItem('yotei_v2_' + k)); }catch{} render(); showUndo('Routine reset', snap); } });
 $('#exp').onclick = exportData;
 $('#imp').onclick = () => $('#impf').click();
 $('#impf').onchange = e => { const f = e.target.files[0]; if (f) importData(f); e.target.value = ''; };
