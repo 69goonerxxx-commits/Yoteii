@@ -38,7 +38,7 @@ export function buildSchedule(ctx){
     if (avail >= total){
       const gap = avail - total;
       if (gap > 0){
-        pre.push({ id:'buf', t:'Buffer time', details:'Extra time from an early start.', d:gap, use:gap, p:'buf' });
+        // No built-in "Buffer time" task is added any more: the spare time just shows as free time.
         msg = 'Early start: ' + gap + ' min of buffer added before you leave at ' + leave + '.';
       } else msg = 'Fits exactly. You leave at ' + leave + '.';
     } else {
