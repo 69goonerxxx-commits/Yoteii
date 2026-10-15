@@ -1,0 +1,8 @@
+Yotei 3.0.1 with the Android app
+
+1. upload-to-repo/  -> upload every file in here to the TOP LEVEL of your GitHub repo (replace the old ones).
+                       README.md and CHANGELOG-v3.md are optional.
+2. In GitHub, open android.yml, tap Edit, and type  .github/workflows/  in front of the file name, then commit.
+3. keep-private/    -> do NOT upload this folder. It has your two signing secrets. Add them in GitHub under
+                       Settings > Secrets and variables > Actions > New repository secret.
+4. Actions tab > Android APK > Run workflow. When it finishes, install the .apk from the Releases page.

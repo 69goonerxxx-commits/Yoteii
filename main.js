@@ -1,9 +1,14 @@
 import { esc } from './util.js';
 import { validateBackup } from './validate.js';
+import { TASK_LISTS, sameId, normalizeIds, removeTask, removeFromRecord } from './tasks.js';
 import { store, initStore, info, onStoreError, replaceAll, clearAll, estimateBytes, makeSnapshot, snapshotIfDue, listSnapshots, restoreSnapshot } from './storage.js';
 import { applyOvr, typeOfIn, buildSchedule } from './engine.js';
 import { isoLocal, parseDay, dowOf, cmpDay } from './dates.js';
 import { migrateDates, needsDateMigration, DATE_FMT } from './migrate.js';
+
+// ---- running inside the Android app (Capacitor)? Plugins only exist there. ----
+const CAPACITOR = window.Capacitor, IS_NATIVE = !!(CAPACITOR && CAPACITOR.isNativePlatform && CAPACITOR.isNativePlatform());
+const nativePlugin = n => (IS_NATIVE && CAPACITOR.Plugins && CAPACITOR.Plugins[n]) || null;
 import { guessIcon, ICONS, iconMarkup, ICON_GROUPS, ICON_TAGS } from './icons.js';
 import { APP_VERSION, FEATURES, LIMITS, CHANGELOG } from './about.js';
 import { TPL } from './templates.js';
@@ -24,6 +29,7 @@ import { BLOCK_INFO, SCI_SRC, PRESS_PTS, CIRC_PTS } from './science.js';
 // STORAGE & CONFIG
 // ============================================================
 const $ = s => document.querySelector(s);
+let toastT = null, toastUntil = 0, toastShownAt = 0;   // toast state (see toast() below)
 await initStore();   // load everything saved on this device before the app starts
 await upgradeDates();
 // v2 stored days as "Sun Oct 11 2026"; v3 uses "2026-10-11". Converted once, with a snapshot of the old data kept first.
@@ -335,10 +341,17 @@ function refreshWinLock(){
   const on = !!$('#e_s').value && $('#e_wrap').style.display !== 'none';
   $('#e_w').disabled = on;
 }
+// The list a row says it belongs to can be wrong for data saved by older versions; find where the task really is.
+function resolveList(l, id){
+  if (!id || l === 'oo' || l === 'win' || getBlocks(l).some(x => sameId(x.id, id))) return l;
+  return TASK_LISTS.find(x => x !== l && getBlocks(x).some(y => sameId(y.id, id))) || l;
+}
 function openEd(l, id, w, startAt){
-  const b = id ? effBlock(l, getBlocks(l).find(x => x.id === id)) : null;
-  if (id && !b){ toast('That task is no longer in your routines. Use Rebuild this day to work with your current ones.'); return; }
-  cur = { l, id, w, wk: l === 'pre' ? 'sleep' : l === 'night' ? 'wind' : ((b && b.w) || w || 'climb1') };
+  l = resolveList(l, id);
+  const b = id ? effBlock(l, getBlocks(l).find(x => sameId(x.id, id))) : null;
+  if (id && !b){ toast('That task is no longer in your routines.', 'Delete it', () => ghostDelete(l, id)); return; }
+  cur = { l, id, w, wk: l === 'pre' ? 'sleep' : l === 'night' ? 'wind' : ((b && b.w) || w || 'climb1'), isNew: !b };
+  edTypes = (b && WIN_LISTS.includes(l)) ? linkedTypes(l, b) : null; edTypesOrig = edTypes ? edTypes.slice() : null;
   $('#e_title').innerHTML = (b ? 'Edit' : 'New') + ' <em>Task</em>';
   $('#e_err').hidden = true;
   $('#ed').dataset.mode = 'task'; $('#e_tlab').textContent = 'Task'; $('#e_dlab').textContent = 'Details'; $('#e_del').textContent = 'Delete';
@@ -353,16 +366,17 @@ function openEd(l, id, w, startAt){
   let st = x.fixed !== undefined ? x.fixed : x.at;
   if (startAt !== undefined && !b) st = startAt;
   $('#e_fx').checked = x.fixed !== undefined;
-  $('#e_s').value = st !== undefined ? toVal(st) : ''; $('#e_e').value = '';
+  endDriven = false; $('#e_s').value = st !== undefined ? toVal(st) : ''; $('#e_e').value = '';
   syncEnd(); refreshWinLock(); applyKindUI();
   $('#e_days').style.display = l === 'oo' ? 'none' : '';
+  drawEdTypes();
   $('#e_details').value = x.details || ''; $('#e_p').value = (x.steps || []).join('\n');
   edDays = x.days ? x.days.slice() : [0,1,2,3,4,5,6]; drawDays();
   ['e_del','e_up','e_dn'].forEach(i => { $('#' + i).style.display = b ? '' : 'none'; });
   $('#ed').showModal(); $('#ed .ef').scrollTop = 0;
 }
 function moveBlock(d){
-  const arr = clone(getBlocks(cur.l)), i = arr.findIndex(x => x.id === cur.id), wk = x => x.w || 'climb1';
+  const arr = clone(getBlocks(cur.l)), i = arr.findIndex(x => sameId(x.id, cur.id)), wk = x => x.w || 'climb1';
   if (i < 0) return;
   if (arr[i].fixed !== undefined || arr[i].at !== undefined){ edErr('This task has a Start time, so it is ordered by that time. Change the Start time instead.'); return; }
   const vis = new Set(schedule().rows.map(r => r.id));
@@ -374,7 +388,43 @@ function moveBlock(d){
   setBlocks(cur.l, arr); $('#ed').close(); render();
 }
 function edErr(msg){ const e = $('#e_err'); e.textContent = msg; e.hidden = false; try{ e.scrollIntoView({ block:'center', behavior:'smooth' }); }catch{} }
+// Day types: which of Home / School / Away a task is added to. A task in several types is saved as one copy per type,
+// tied together by a shared link key (lk), so editing one updates the others.
+const WIN_LISTS = ['home', 'school', 'away'];
+let edTypes = null, edTypesOrig = null;   // null = not chosen yet, show the default
+const newTaskId = n => 'u' + Date.now().toString(36) + (n || 0) + Math.random().toString(36).slice(2, 5);
+function linkedTypes(l, b){ return !b.lk ? [l] : WIN_LISTS.filter(L => L === l || getBlocks(L).some(x => x.lk && x.lk === b.lk)); }
+function typesVisible(){
+  if (WIN_LISTS.includes(cur.l)) return true;
+  return cur.l === 'oo' && !!cur.addScope && !!cur.isNew && !['sleep', 'wind'].includes($('#e_w').value || 'climb1');
+}
+function defaultType(){ return WIN_LISTS.includes(cur.l) ? cur.l : (typeOf($('#e_w').value || 'climb1') || 'home'); }
+const shownTypes = () => edTypes || [defaultType()];
+function drawEdTypes(){
+  const vis = typesVisible(); $('#e_typesWrap').style.display = vis ? '' : 'none'; if (!vis) return;
+  const on = shownTypes();
+  $('#e_types').innerHTML = WIN_LISTS.map(m => '<button type="button" data-m="' + m + '"' + (on.includes(m) ? ' class="on"' : '') + '>' + MODE_LABEL[m] + '</button>').join('');
+}
+$('#e_types').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const m = b.dataset.m, on = shownTypes(), next = on.includes(m) ? on.filter(x => x !== m) : on.concat(m);
+  if (!next.length){ edErr('A task needs at least one day type.'); return; }
+  edTypes = WIN_LISTS.filter(x => next.includes(x)); drawEdTypes();
+});
+$('#e_w').addEventListener('change', drawEdTypes);
+let endDriven = false;   // true while the Start was worked out from the End and the length (End entered first)
+function startFromEnd(){
+  const e = $('#e_e').value; if (!e) return false;
+  if ($('#e_k').value === 'sug') setKind('fixedlen');
+  let d = parseInt($('#e_d').value) || 0;
+  if (!d){ d = 20; $('#e_d').value = d; highlightChip(); }
+  const [h2, m2] = e.split(':').map(Number), st = h2 * 60 + m2 - d;
+  if (st < 0){ edErr('That end time is too early for a ' + d + '-minute task. Pick a later end time or a shorter length.'); return false; }
+  $('#e_s').value = toVal(st); endDriven = true; syncWinSel(); refreshWinLock();
+  return true;
+}
 function syncEnd(){
+  if (endDriven) return;
   const s = $('#e_s').value, d = parseInt($('#e_d').value) || 0;
   if (!s || !d){ $('#e_e').value = ''; return; }
   const [h, mi] = s.split(':').map(Number), t = h*60 + mi + d;
@@ -425,19 +475,31 @@ function drawIconPicker(q){
   $('#ip_tabs').innerHTML = shown.map(g => '<button type="button" role="tab" data-g="' + ipId(g) + '" aria-label="' + g + '" title="' + g + '">' + catMarkup(g) + '</button>').join('') + '<button type="button" role="tab" data-g="ip_custom" aria-label="Custom" title="Custom">' + (ICONS.sparkles || '') + '</button>';
   ipSpy();
 }
-async function pickFa(n){
-  const key = 'fa-' + n;
+let pickTok = 0;   // identifies the current icon pick; closing the picker or editor cancels any pick that is still downloading
+async function pickFa(n, btn){
+  const key = 'fa-' + n, tok = ++pickTok;
   if (!ICONS[key]){
+    if (btn) btn.classList.add('loading');
+    const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 8000);
     try{
-      const r = await fetch(FA_URL(n)); if (!r.ok) throw 0;
+      if (navigator.onLine === false) throw 0;
+      const r = await fetch(FA_URL(n), { signal:ac.signal }); if (!r.ok) throw 0;
       const t = await r.text(), vb = (t.match(/viewBox="([^"]+)"/) || [])[1], ds = [...t.matchAll(/<path[^>]*\sd="([^"]+)"/g)].map(m => m[1]);
       if (!vb || !ds.length) throw 0;
       ICONS[key] = '<svg class="pi" viewBox="' + vb + '">' + ds.map(d => '<path d="' + d + '"/>').join('') + '</svg>';
       try{ const c = JSON.parse(localStorage.getItem('yotei_fa') || '{}'); c[key] = ICONS[key]; localStorage.setItem('yotei_fa', JSON.stringify(c)); }catch{}
-    }catch{ toast('Could not load that icon. Check your connection and try again.'); return; }
+    }catch{
+      clearTimeout(timer); if (btn) btn.classList.remove('loading');
+      if (tok === pickTok) toast('Could not load that icon. Check your connection and try again.');
+      return;
+    }
+    clearTimeout(timer); if (btn) btn.classList.remove('loading');
   }
+  if (tok !== pickTok) return;   // the picker or editor was closed (or another icon chosen) while this downloaded: leave the editor alone
   $('#e_icon').value = key; updateIconBtn(); $('#iconPick').close();
 }
+$('#iconPick').addEventListener('close', () => { pickTok++; });
+$('#ed').addEventListener('close', () => { pickTok++; });
 function ipSpy(){
   const sc = $('#ip_scroll'), tabs = $('#ip_tabs'); if (!sc || !tabs) return;
   const top = sc.getBoundingClientRect().top + 24; let on = null;
@@ -465,7 +527,7 @@ $('#e_iconBtn').addEventListener('click', () => {
 });
 $('#ip_groups').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  if (b.dataset.fa){ pickFa(b.dataset.fa); return; }
+  if (b.dataset.fa){ pickFa(b.dataset.fa, b); return; }
   $('#e_icon').value = b.dataset.i; updateIconBtn(); $('#iconPick').close();
 });
 $('#ip_x').onclick = () => $('#iconPick').close();
@@ -515,9 +577,9 @@ Object.assign(ICONS, { 'check-circle':'<svg class="pi" viewBox="0 0 256 256"><pa
 const tile = (id, ic, label) => { $('#' + id).innerHTML = ICONS[ic] + '<span>' + label + '</span>'; };
 function openTaskSheet(l, id){
   const { rows } = schedule();
-  const r = rows.find(x => x.id === id);
+  const r = rows.find(x => sameId(x.id, id));
   if (!r) return;
-  sheetCtx = { l, id };
+  sheetCtx = { l: resolveList(l, id), id };
   const st = WIN_STYLE[r.w] || WIN_STYLE.climb1, col = safeCol(r.color) || st.c;
   const cut = r.use === 0 && !r.sug && r.fixed === undefined;
   const sh = $('#taskSheet'); sh.style.setProperty('--tc', col); sh.style.setProperty('--tcon', onColor(col));
@@ -552,20 +614,20 @@ $('#ts_done').onclick = () => {
 $('#ts_edit').onclick = () => { $('#taskSheet').close(); openEd(sheetCtx.l, sheetCtx.id); };
 $('#ts_del').onclick = () => {
   if (!confirm('Delete this task?')) return;
-  setBlocks(sheetCtx.l, clone(getBlocks(sheetCtx.l)).filter(x => x.id !== sheetCtx.id));
+  setBlocks(sheetCtx.l, clone(getBlocks(sheetCtx.l)).filter(x => !sameId(x.id, sheetCtx.id)));
   $('#taskSheet').close(); render();
 };
 $('#ts_dup').onclick = () => {
-  const r = schedule().rows.find(x => x.id === sheetCtx.id); if (!r) return;
+  const r = schedule().rows.find(x => sameId(x.id, sheetCtx.id)); if (!r) return;
   $('#taskSheet').close();
-  openEd('oo', null, r.w); cur.addScope = true;
+  openEd('oo', null, r.w); cur.addScope = true; drawEdTypes();
   $('#e_t').value = r.t;
   $('#e_k').value = r.sug ? 'sug' : ['core', 'flex', 'opt'].includes(r.p) ? r.p : r.p === 'open' ? 'open' : 'fixedlen';
   $('#e_d').value = r.d !== undefined ? r.d : r.use; $('#e_m').value = r.m ?? ''; highlightChip();
   $('#e_icon').value = r.icon || ''; updateIconBtn();
   $('#e_color').value = r.color || ''; drawColorRow('e'); setEdAccent();
   $('#e_details').value = r.details || ''; $('#e_p').value = (r.steps || []).join('\n');
-  $('#e_s').value = ''; $('#e_e').value = ''; $('#e_fx').checked = false; refreshWinLock(); applyKindUI();
+  endDriven = false; $('#e_s').value = ''; $('#e_e').value = ''; $('#e_fx').checked = false; refreshWinLock(); applyKindUI();
 };
 // ============================================================
 // SUBTASK SHEET — opens from the small icon next to a task's
@@ -573,18 +635,18 @@ $('#ts_dup').onclick = () => {
 // ============================================================
 let stepsSheetId = null;
 function tickAllSteps(id, on = true){
-  const r = schedule().rows.find(x => x.id === id); if (!r || !(r.steps || []).length) return;
+  const r = schedule().rows.find(x => sameId(x.id, id)); if (!r || !(r.steps || []).length) return;
   r.steps.forEach((z, i) => { const k = id + '#' + i, j = done.ids.indexOf(k); if (on && j === -1) done.ids.push(k); if (!on && j !== -1) done.ids.splice(j, 1); });
   const pi = done.ids.indexOf(id); if (on && pi === -1) done.ids.push(id); if (!on && pi !== -1) done.ids.splice(pi, 1);
   saveDay(); render();
 }
 function offerTickAll(id){
-  const r = schedule().rows.find(x => x.id === id); if (!r) return;
+  const r = schedule().rows.find(x => sameId(x.id, id)); if (!r) return;
   const n = (r.steps || []).filter((z, i) => !done.ids.includes(id + '#' + i)).length;
   if (n) toast(n === 1 ? 'Tick the subtask too?' : 'Tick all ' + n + ' subtasks too?', 'Tick all', () => tickAllSteps(id));
 }
 function ssRefresh(){
-  const r = schedule().rows.find(x => x.id === stepsSheetId); if (!r) return;
+  const r = schedule().rows.find(x => sameId(x.id, stepsSheetId)); if (!r) return;
   $('#ss_list').innerHTML = stepsRowsHtml(r);
   const all = (r.steps || []).every((z, i) => done.ids.includes(r.id + '#' + i));
   $('#ss_all').textContent = all ? 'Untick all' : 'Tick all';
@@ -597,7 +659,7 @@ function stepsRowsHtml(r){
   }).join('');
 }
 function openStepsSheet(id){
-  const { rows } = schedule(), r = rows.find(x => x.id === id);
+  const { rows } = schedule(), r = rows.find(x => sameId(x.id, id));
   if (!r || !(r.steps || []).length) return;
   stepsSheetId = id;
   $('#ss_title').textContent = r.t;
@@ -618,30 +680,33 @@ $('#ss_list').addEventListener('click', e => {
 });
 $('#e_presets').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  $('#e_d').value = b.dataset.m; highlightChip(); syncEnd();
+  $('#e_d').value = b.dataset.m; highlightChip(); if (endDriven) startFromEnd(); else syncEnd();
 });
-$('#e_d').addEventListener('input', () => { highlightChip(); syncEnd(); });
+$('#e_d').addEventListener('input', () => { highlightChip(); if (endDriven){ if (parseInt($('#e_d').value) > 0) startFromEnd(); } else syncEnd(); });
 $('#e_s').addEventListener('input', () => {
-  const s = $('#e_s').value;
+  const s = $('#e_s').value; endDriven = false;
   if (s){ if ($('#e_k').value === 'sug') setKind('fixedlen'); syncEnd(); syncWinSel(); }
   else { $('#e_e').value = ''; $('#e_fx').checked = false; }
   refreshWinLock();
 });
 $('#e_e').addEventListener('input', () => {
   const s = $('#e_s').value, e = $('#e_e').value;
-  if (!e) return;
-  if (!s){ edErr('Pick a start time first.'); $('#e_e').value = ''; return; }
+  if (!e){ if (endDriven){ $('#e_s').value = ''; $('#e_fx').checked = false; endDriven = false; refreshWinLock(); } return; }
+  if (!s || endDriven){                       // End first (or End changed again): count back from it using the length
+    if (!startFromEnd()){ $('#e_e').value = ''; if (endDriven){ $('#e_s').value = ''; endDriven = false; refreshWinLock(); } }
+    return;
+  }
   const [h, mi] = s.split(':').map(Number), [h2, m2] = e.split(':').map(Number), d = h2*60 + m2 - (h*60 + mi);
   if (d > 0){ $('#e_d').value = d; highlightChip(); }
   else { edErr('End time has to be after the start time.'); syncEnd(); }
 });
 function syncWinSel(){
   const f = $('#e_s').value; if (!f || $('#e_wrap').style.display === 'none') return;
-  const [h, mi] = f.split(':').map(Number); $('#e_w').value = winFor(h*60 + mi);
+  const [h, mi] = f.split(':').map(Number); $('#e_w').value = winFor(h*60 + mi); drawEdTypes();
 }
 $('#e_k').addEventListener('change', () => {
   const k = $('#e_k').value;
-  if (k === 'sug'){ $('#e_s').value = ''; $('#e_e').value = ''; $('#e_fx').checked = false; }
+  if (k === 'sug'){ endDriven = false; $('#e_s').value = ''; $('#e_e').value = ''; $('#e_fx').checked = false; }
   if (k !== 'sug' && !(parseInt($('#e_d').value) > 0)){ $('#e_d').value = 20; highlightChip(); }
   if (['core', 'flex', 'opt'].includes(k) && $('#e_m').value === '') $('#e_m').value = $('#e_d').value;
   applyKindUI(); syncEnd(); refreshWinLock();
@@ -653,21 +718,21 @@ $('#e_days').addEventListener('click', e => {
   edDays = edDays.includes(i) ? edDays.filter(z => z !== i) : edDays.concat(i); drawDays();
 });
 $('#e_x').onclick = () => $('#ed').close();
-$('#ed').addEventListener('input', () => { $('#e_err').hidden = true; });
+$('#ed').addEventListener('input', () => { $('#e_err').hidden = true; }, true);   // capture phase: clear the old message first, so an error raised by this very input stays visible
 $('#e_up').onclick = () => moveBlock(-1);
 $('#e_dn').onclick = () => moveBlock(1);
-$('#e_del').onclick = () => { setBlocks(cur.l, clone(getBlocks(cur.l)).filter(x => x.id !== cur.id)); $('#ed').close(); render(); };
+$('#e_del').onclick = () => { setBlocks(cur.l, clone(getBlocks(cur.l)).filter(x => !sameId(x.id, cur.id))); $('#ed').close(); render(); };
 $('#e_ok').onclick = () => {
   const t = $('#e_t').value.trim();
   if (!t){ edErr('Give the task a name first.'); return; }
   if (cur.l === 'win'){ saveWinBlock(t); return; }
-  { const s = $('#e_s').value, e = $('#e_e').value;
-    if (e && !s){ edErr('Add a start time too, or clear the end time.'); return; }
+  { let s = $('#e_s').value; const e = $('#e_e').value;
+    if (e && !s){ if (!startFromEnd()) return; s = $('#e_s').value; }
     if (s && e){ const [h, mi] = s.split(':').map(Number), [h2, m2] = e.split(':').map(Number); if (h2*60 + m2 <= h*60 + mi){ edErr('End time has to be after the start time.'); return; } }
   }
   let k = $('#e_k').value;
   if (k !== 'sug' && !(parseInt($('#e_d').value) > 0)){ edErr('Set how long it takes, in minutes.'); return; }
-  const arr = clone(getBlocks(cur.l)), old0 = arr.find(x => x.id === cur.id), old = effBlock(cur.l, old0);
+  const arr = clone(getBlocks(cur.l)), old0 = arr.find(x => sameId(x.id, cur.id)), old = effBlock(cur.l, old0);
   const b = { id: old ? old.id : 'u' + Date.now().toString(36), t };
   if (old){ const FORM = ['id','t','d','m','p','sug','fixed','at','details','color','icon','steps','days','w']; Object.keys(old).forEach(z => { if (!FORM.includes(z)) b[z] = old[z]; }); }
   if (cur.l === 'oo') b.w = $('#e_w').value || 'climb1'; else if (old && old.w) b.w = old.w; else if (cur.l !== 'pre' && cur.l !== 'night') b.w = cur.w || 'climb1';
@@ -691,13 +756,16 @@ $('#e_ok').onclick = () => {
       else { const need = cur.l === 'pre' ? 'sleep' : 'wind', got = winFor(tm0); if (got !== need){ edErr('That time falls in ' + wins()[got].name + ', not ' + wins()[need].name + '. Add it from that window instead.'); return; } }
     }
   }
+  const wantTypes = WIN_LISTS.includes(cur.l) || (cur.l === 'oo' && cur.addScope && cur.isNew && b.w !== 'sleep' && b.w !== 'wind');
+  const T = wantTypes ? (edTypes ? edTypes.slice() : [WIN_LISTS.includes(cur.l) ? cur.l : (typeOf(b.w) || 'home')]) : undefined;
+  const typesChanged = !!(old && T && edTypesOrig && (T.length !== edTypesOrig.length || T.some(x => !edTypesOrig.includes(x))));
   if (cur.l === 'oo' && cur.addScope && !old && !cur.fromInbox){
     const w = b.w, l = w === 'sleep' ? 'pre' : w === 'wind' ? 'night' : (typeOf(w) || 'home');
-    askScope('add', { l, id:b.id, b, old:null, w }); return;
+    askScope('add', { l, id:b.id, b, old:null, w, types:T }); return;
   }
   if (cur.l !== 'oo'){
-    if (old && !Object.keys(diffBlock(old, b)).length){ $('#ed').close(); return; }
-    askScope(old ? 'edit' : 'add', { l:cur.l, id:b.id, b, old, w:cur.w }); return;
+    if (old && !Object.keys(diffBlock(old, b)).length && !typesChanged){ $('#ed').close(); return; }
+    askScope(old ? 'edit' : 'add', { l:cur.l, id:b.id, b, old, w:cur.w, types:T }); return;
   }
   needLive();
   if (old0) arr[arr.indexOf(old0)] = b; else arr.push(b);
@@ -846,16 +914,18 @@ function draw(){
     const chips = (stepBadge || noteIc) ? '<span class="tlchips">' + stepBadge + noteIc + '</span>' : '';
     return '<div class="blk" data-c="' + dotColor + '" data-f="' + frac.toFixed(3) + '"><button class="tlrow' + (dn ? ' done' : '') + (isNow ? ' now' : '') + (cut ? ' cut' : '') + (r.sug ? ' sug' : '') + '" style="--dot:' + dotColor + ';--h:' + h + 'px" data-id="' + r.id + '" data-l="' + (r.post ? r.md : 'pre') + '" data-locked="' + ((cut || r.sug) ? 1 : 0) + '" aria-label="' + esc(r.t) + (cut ? ', skipped' : r.sug ? ', suggestion' : dn ? ', done' : ', not done') + '">' + col1 + '<span class="tldot" style="' + dotStyle + '">' + dotIcon + '</span><span class="tlbody"><span class="time">' + metaTxt + tag + sw + '</span><span class="ttl">' + esc(r.t) + (editing && r.p !== 'buf' ? '<span class="dragH" aria-label="Drag to move" title="Drag to move">&#8942;&#8942;</span>' : '') + '</span>' + chips + '</span>' + check + '</button>' + noteHtml(r) + '</div>';
   };
+  const MIN_GAP = 5, canAdd = !snapMode();      // gaps shorter than 5 minutes are not worth showing
+  function gapEl(from, to, l, w){                // a free stretch of time: broken line + "free" label + add button
+    const mins = to - from; if (mins < MIN_GAP) return '';
+    const h = Math.floor(mins / 60), m = mins % 60, dur = ((h ? h + 'h ' : '') + (m || !h ? m + 'm' : '')).trim();
+    return '<div class="gap"><span class="gaptxt">' + dur + ' free</span>' + (canAdd ? '<button class="add" data-l="' + l + '" data-w="' + w + '" data-s="' + from + '">+ Add task</button>' : '') + '</div>';
+  }
   function gapRows(rs){
     let out = '';
     for (let i = 0; i < rs.length; i++){
       out += rowHtml(rs[i], rs[i - 1]);
       const cur = rs[i], next = rs[i + 1];
-      if (cur.use > 0 && !cur.sug && next && next.use > 0 && !next.sug && next.start > cur.end){
-        const mins = next.start - cur.end, h = Math.floor(mins / 60), m = mins % 60;
-        const dur = (h ? h + 'h ' : '') + (m || !h ? m + 'm' : '');
-        out += '<div class="gap"><span class="gaptxt">' + dur + ' free</span>' + (!editing ? '' : '<button class="add" data-l="' + (cur.md || 'pre') + '" data-w="' + cur.w + '" data-s="' + cur.end + '">+ Add task</button>') + '</div>';
-      }
+      if (cur.use > 0 && !cur.sug && next && next.use > 0 && !next.sug && next.start > cur.end) out += gapEl(cur.end, next.start, cur.md || 'pre', cur.w);
     }
     return out;
   }
@@ -877,8 +947,13 @@ function draw(){
     }
     if ((k === 'sleep' || k === 'wind') && isToday && rs.some(r => r.use > 0 && !r.sug && !done.ids.includes(r.id))) html += '<button class="add runBtn" data-run="' + k + '">Start ' + esc(WB[k].name.toLowerCase()) + '</button>';
     if (k === 'sleep' || k === 'wind' || t || rs.length){
-      html += rs.length ? gapRows(rs) : '<p class="wn">No tasks yet.</p>';
-      if (editing || !rs.length) html += '<button class="add" data-l="' + (k === 'sleep' ? 'pre' : k === 'wind' ? 'night' : t || 'oo') + '" data-w="' + k + '">+ Add task</button>';
+      const timed = rs.filter(r => r.use > 0 && !r.sug), addL = k === 'sleep' ? 'pre' : k === 'wind' ? 'night' : t || 'oo';
+      const ws = wake + WB[k].from, we = wake + WB[k].to;
+      const headGap = timed.length ? gapEl(ws, Math.min(...timed.map(r => r.start)), addL, k) : '';       // free time before the first task
+      const tailGap = timed.length ? gapEl(Math.max(...timed.map(r => r.end)), we, addL, k) : '';          // free time after the last task
+      const allGap = timed.length ? '' : gapEl(ws, we, addL, k);                                           // a block with nothing in it
+      html += headGap + (rs.length ? gapRows(rs) : '<p class="wn">No tasks yet.</p>') + tailGap + allGap;
+      if (editing || (!rs.length && !allGap)) html += '<button class="add" data-l="' + addL + '" data-w="' + k + '">+ Add task</button>';
     } else html += '<p class="wn">Choose where you are for this stretch and its tasks appear here.</p>';
     if (editing) html += '<button class="add" data-eb="' + k + '">Edit block</button>';
     return html;
@@ -1001,7 +1076,18 @@ $('#dnote').addEventListener('input', e => { day.note = e.target.value; saveDay(
 // ============================================================
 // Backup files keep the v2 layout (keys carry the yotei_v2_ prefix), so they stay readable by older versions.
 function backupData(){ const o = {}; Object.entries(store.dump()).forEach(([k, v]) => { o['yotei_v2_' + k] = v; }); return o; }
-function exportData(){
+// In the Android app a page cannot download a file, so the backup is written to a temporary file and handed to Android's share sheet.
+async function saveBackupNative(name, json){
+  const fs = nativePlugin('Filesystem'), sh = nativePlugin('Share'); if (!fs || !sh) return false;
+  try{
+    const r = await fs.writeFile({ path:name, data:json, directory:'CACHE', encoding:'utf8' });
+    await sh.share({ title:'Yotei backup', url:r.uri, dialogTitle:'Save your Yotei backup' });
+    store.set('lastBackup', Date.now()); updateBackupInfo();
+  }catch(e){ if (!/cancel/i.test(String((e && e.message) || e))) alert('Could not save the backup. Please try again.'); }
+  return true;
+}
+async function exportData(){
+  if (await saveBackupNative('yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify({ app:'yotei', v:3, data:backupData() }))) return;
   const o = backupData();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify({ app:'yotei', v:3, data:o })], { type:'application/json' }));
@@ -1469,9 +1555,32 @@ function askScope(type, ctx){
   $('#sc_h').textContent = type === 'reset' ? 'Reset this block for' : type === 'delete' ? 'Delete this task for' : type === 'add' ? 'Add this task to' : 'Apply this change to';
   $('#sc_opts').innerHTML = [['day', 'Only this day (' + when + ')'], ['from', 'This day and the days after'], ['all', 'All days']].map(a => '<button data-sc="' + a[0] + '">' + a[1] + '</button>').join('');
   $('#sc_modes').style.display = (ctx.l === 'pre' || ctx.l === 'night') ? '' : 'none';
+  { const tn = $('#sc_typesNote'), ts = ctx.types && type !== 'delete' ? ctx.types : null; tn.style.display = ts ? '' : 'none'; if (ts) tn.textContent = 'Day types: ' + ts.map(m => MODE_LABEL[m]).join(', ') + '. This applies to the options below, except "Only this day".'; }
   drawScChips(); $('#scopeDlg').showModal();
 }
 function applyScope(sc){ const _s = grab(), ty = scopeCtx && scopeCtx.type; needLive(); applyScope0(sc); showUndo(ty === 'delete' ? 'Task deleted' : ty === 'add' ? 'Task added' : 'Task updated', _s); }
+// ---- deleting: must always work, whatever state an older version left the task in ----
+function removeFromRoutines(c){
+  const all = {}; TASK_LISTS.forEach(l => { all[l] = getBlocks(l); });
+  const r = removeTask(all, { ...c, ...rowInfo(c.id) });
+  if (r.list) setBlocks(r.list, r.blocks[r.list]);
+  return !!r.list;
+}
+function rowInfo(id){ const r = schedule().rows.find(x => sameId(x.id, id)); return r ? { t: r.t, w: r.w } : {}; }
+// A past day shows a frozen record of what was there. Deleting from it removes that entry from the record.
+function deleteFromRecord(c){
+  if (!confirm('Remove this task from the record of this day?')) return;
+  const _s = grab(), H = store.get('hist', {}), rec = H[viewDate], next = removeFromRecord(rec, { id: c.id, ...rowInfo(c.id) });
+  if (next !== rec){ H[viewDate] = next; store.set('hist', H); }
+  render(); showUndo('Task removed', _s);
+}
+// A task that is on screen but no longer in any routine.
+function ghostDelete(l, id){
+  if (snapMode()){ deleteFromRecord({ l, id }); return; }
+  const _s = grab(); needLive();
+  if (l === 'oo') setBlocks('oo', clone(getBlocks('oo')).filter(x => !sameId(x.id, id))); else removeFromRoutines({ l, id });
+  render(); showUndo('Task deleted', _s);
+}
 function applyScope0(sc){
   const c = scopeCtx; if (!c) return;
   if (c.l === 'win'){ applyWinScope(sc, c); return; }
@@ -1486,22 +1595,47 @@ function applyScope0(sc){
       delete o.days; delete o.modes;
       day.oneoffs = (day.oneoffs || []).concat(o); saveDay();
     } else {
-      const b = { ...c.b, ...filt }; if (sc === 'from') b.from = iso;
-      arr.push(b); setBlocks(c.l, arr);
-      if (c.l !== 'pre' && c.l !== 'night' && c.w && !typeOf(c.w)){ day.types[c.w] = c.l; saveDay(); }
+      const types = (c.types && c.types.length) ? c.types : [c.l], lk = types.length > 1 ? (c.b.lk || 'k' + c.id) : c.b.lk;
+      types.forEach((tp, i) => {
+        const b = { ...c.b, ...filt }; if (sc === 'from') b.from = iso; if (lk) b.lk = lk; if (i > 0) b.id = newTaskId(i);
+        const a = tp === c.l ? arr : clone(getBlocks(tp)); a.push(b); setBlocks(tp, a);
+      });
+      if (c.l !== 'pre' && c.l !== 'night' && c.w && !typeOf(c.w) && types.includes(c.l)){ day.types[c.w] = c.l; saveDay(); }
     }
   } else if (c.type === 'delete'){
-    if (sc === 'all' && !hasFilt){ setBlocks(c.l, arr.filter(x => x.id !== c.id)); delete OV[c.id]; }
+    if (sc === 'all' && !hasFilt){ removeFromRoutines(c); delete OV[c.id]; }
     else push(c.id, { ...range_, ...filt, patch:null });
   } else {
     const patch = diffBlock(c.old, c.b);
     if (Object.keys(patch).length){
       if (sc === 'all' && !hasFilt){
-        { const bi = arr.findIndex(x => x.id === c.id), nb = { ...arr[bi] }; Object.keys(patch).forEach(k => { if (patch[k] === null) delete nb[k]; else nb[k] = patch[k]; }); arr[bi] = nb; } setBlocks(c.l, arr);
+        { const bi = arr.findIndex(x => sameId(x.id, c.id)), nb = { ...arr[bi] }; Object.keys(patch).forEach(k => { if (patch[k] === null) delete nb[k]; else nb[k] = patch[k]; }); arr[bi] = nb; } setBlocks(c.l, arr);
         (OV[c.id] || []).forEach(e => { if (e.patch) Object.keys(patch).forEach(k => delete e.patch[k]); });
         OV[c.id] = (OV[c.id] || []).filter(e => e.patch === null || Object.keys(e.patch).length);
         if (!OV[c.id].length) delete OV[c.id];
       } else push(c.id, { ...range_, ...filt, patch });
+    }
+    if (c.types && WIN_LISTS.includes(c.l) && sc !== 'day'){
+      const base = getBlocks(c.l).find(x => sameId(x.id, c.id)) || {}, copies = {};
+      WIN_LISTS.forEach(L => { if (L !== c.l && base.lk){ const x = getBlocks(L).find(y => y.lk === base.lk); if (x) copies[L] = x; } });
+      const have = [c.l, ...Object.keys(copies)], toAdd = c.types.filter(t => !have.includes(t)), toDrop = have.filter(t => !c.types.includes(t));
+      let lk = base.lk;
+      if (!lk && toAdd.length){ lk = 'k' + c.id; setBlocks(c.l, getBlocks(c.l).map(x => sameId(x.id, c.id) ? { ...x, lk } : x)); }
+      const whole = sc === 'all' && !hasFilt, pt = { ...patch }; delete pt.lk;
+      Object.keys(copies).forEach(L => {                       // copies that stay: carry the change over
+        if (toDrop.includes(L) || !Object.keys(pt).length) return;
+        if (whole) setBlocks(L, clone(getBlocks(L)).map(x => { if (x.id !== copies[L].id) return x; const nb = { ...x }; Object.keys(pt).forEach(k => { if (pt[k] === null) delete nb[k]; else nb[k] = pt[k]; }); return nb; }));
+        else push(copies[L].id, { ...range_, ...filt, patch: { ...pt } });
+      });
+      toDrop.forEach(L => {                                    // unticked types: remove that copy
+        const id = L === c.l ? c.id : copies[L].id;
+        if (whole){ setBlocks(L, clone(getBlocks(L)).filter(x => !sameId(x.id, id))); delete OV[id]; }
+        else push(id, { ...range_, ...filt, patch:null });
+      });
+      toAdd.forEach((L, i) => {                                // newly ticked types: add a copy
+        const cp = { ...c.b, ...filt, id: newTaskId(i + 1), lk }; if (sc === 'from') cp.from = iso;
+        const a = clone(getBlocks(L)); a.push(cp); setBlocks(L, a);
+      });
     }
   }
   store.set('ovr', OV); scopeCtx = null; $('#scopeDlg').close(); $('#ed').close(); render();
@@ -1511,11 +1645,12 @@ $('#sc_modes').addEventListener('click', e => { const b = e.target.closest('butt
 $('#sc_opts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyScope(b.dataset.sc); });
 $('#sc_x').onclick = () => $('#scopeDlg').close();
 $('#e_del').onclick = () => {
-  if (cur.l === 'oo'){ const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => x.id !== cur.id)); $('#ed').close(); render(); showUndo('Task deleted', _s); return; }
+  if (cur.l === 'oo'){ const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => !sameId(x.id, cur.id))); $('#ed').close(); render(); showUndo('Task deleted', _s); return; }
   askScope(cur.l === 'win' ? 'reset' : 'delete', { l:cur.l, id:cur.id });
 };
 $('#ts_del').onclick = () => {
-  if (sheetCtx.l === 'oo'){ if (!confirm('Delete this task?')) return; const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => x.id !== sheetCtx.id)); $('#taskSheet').close(); render(); showUndo('Task deleted', _s); return; }
+  if (snapMode()){ $('#taskSheet').close(); deleteFromRecord(sheetCtx); return; }
+  if (sheetCtx.l === 'oo'){ if (!confirm('Delete this task?')) return; const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => !sameId(x.id, sheetCtx.id))); $('#taskSheet').close(); render(); showUndo('Task deleted', _s); return; }
   $('#taskSheet').close(); askScope('delete', { l:sheetCtx.l, id:sheetCtx.id });
 };
 
@@ -1539,7 +1674,7 @@ function openMv(mode){
 function mvDate(){ const v = $('#mv_d').value; if (!v) return null; const [y, m, d] = v.split('-').map(Number); return isoLocal(new Date(y, m - 1, d)); }
 function mvDo(kind){ const _s = grab(); needLive(); mvDo0(kind); showUndo(kind === 'copy' ? 'Copied' : kind === 'inbox' ? 'Moved to inbox' : 'Moved', _s); }
 function mvDo0(kind){
-  const r = schedule().rows.find(x => x.id === sheetCtx.id); if (!r) return;
+  const r = schedule().rows.find(x => sameId(x.id, sheetCtx.id)); if (!r) return;
   const ds = kind === 'inbox' ? null : mvDate(); if (kind !== 'inbox' && !ds) return;
   const o = { id:'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t:r.t, d:r.d !== undefined ? r.d : r.use };
   ['m', 'p', 'sug', 'icon', 'color', 'details', 'steps', 'fixed', 'at'].forEach(k => { if (r[k] !== undefined) o[k] = r[k]; });
@@ -1547,7 +1682,7 @@ function mvDo0(kind){
   if (tm){ const [h, mi] = tm.split(':').map(Number); o.fixed = h * 60 + mi; if (!o.d) o.d = 20; }
   if (ds) o.w = o.fixed !== undefined ? winFor(o.fixed, (planFor(ds) || {}).w ?? defWake()) : (r.w || 'climb1');
   const removeHere = () => {
-    if (sheetCtx.l === 'oo') day.oneoffs = (day.oneoffs || []).filter(x => x.id !== sheetCtx.id);
+    if (sheetCtx.l === 'oo') day.oneoffs = (day.oneoffs || []).filter(x => !sameId(x.id, sheetCtx.id));
     else { const OV = store.get('ovr', {}), iso = viewDate; (OV[sheetCtx.id] = OV[sheetCtx.id] || []).push({ from:iso, to:iso, patch:null }); store.set('ovr', OV); }
   };
   if (kind === 'inbox'){ const l = store.get('inbox', []); l.push({ id:'i' + Date.now().toString(36), t:r.t }); store.set('inbox', l); removeHere(); }
@@ -1590,13 +1725,20 @@ $('#sh_x').onclick = () => $('#shDlg').close();
 // UNDO + TOASTS, USUAL DAYS, ENERGY CHECK-INS, TASK INSIGHTS,
 // ANY-TASK TIMER, WEEKLY REVIEW, SHARE BACKUP, DRAG AND DROP
 // ============================================================
-let toastT = null;
+function hideToast(){ clearTimeout(toastT); toastUntil = 0; $('#toast').classList.remove('show'); }
 function toast(msg, label, fn){
+  clearTimeout(toastT);
+  toastUntil = Date.now() + 7000; toastShownAt = Date.now();
+  toastT = setTimeout(hideToast, 7000);                 // timer first, so nothing below can leave a toast stuck on screen
   $('#toastMsg').textContent = msg;
   const b = $('#toastBtn'); b.style.display = label ? '' : 'none'; b.textContent = label || '';
-  b.onclick = () => { $('#toast').classList.remove('show'); if (fn) fn(); };
-  $('#toast').classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $('#toast').classList.remove('show'), 7000);
+  b.onclick = () => { hideToast(); if (fn) fn(); };
+  $('#toast').classList.add('show');
 }
+// Safety nets: a toast can never outlive its time, even if the phone paused the timer; tapping the message dismisses it.
+setInterval(() => { if (toastUntil && Date.now() > toastUntil + 300) hideToast(); }, 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && toastUntil && Date.now() >= toastUntil) hideToast(); });
+$('#toast').addEventListener('click', e => { if (e.target.id !== 'toastBtn') hideToast(); });
 const UNDO_KEYS = ['blocks', 'ovr', 'plans', 'inbox', 'taskNotes', 'hist', 'wins', 'wovr'];
 function grab(){ const s = {}; UNDO_KEYS.forEach(k => { s[k] = store.raw(k); }); return s; }
 function showUndo(msg, s){
@@ -1668,7 +1810,7 @@ $('#ts_noteb').onclick = () => {
   setTimeout(() => { const t = document.querySelector('.noteEdit .ntxt'); if (t){ t.scrollIntoView({ block:'center' }); t.focus(); } }, 60);
 };
 $('#ts_timer').onclick = () => {
-  const r = schedule().rows.find(x => x.id === sheetCtx.id); $('#taskSheet').close();
+  const r = schedule().rows.find(x => sameId(x.id, sheetCtx.id)); $('#taskSheet').close();
   if (!r || !(r.use > 0)) return;
   run = { k:r.w, q:[r], i:0, left:r.use * 60, paused:false, last:Date.now(), beeped:false };
   runDraw(); $('#runDlg').showModal();
@@ -1703,6 +1845,7 @@ function backupJson(){
   return JSON.stringify({ app:'yotei', v:3, data:backupData() });
 }
 async function shareBackup(){
+  if (IS_NATIVE && await saveBackupNative('yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', backupJson())) return;
   const f = new File([backupJson()], 'yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', { type:'application/json' });
   if (navigator.canShare && navigator.canShare({ files:[f] })){
     try{ await navigator.share({ files:[f], title:'Yotei backup' }); store.set('lastBackup', Date.now()); updateBackupInfo(); return; }
@@ -1759,10 +1902,10 @@ document.addEventListener('pointerup', e => dragEnd(e, false));
 document.addEventListener('pointercancel', e => dragEnd(e, true));
 function reorderBlock(l, id, beforeId, tl){
   if (l !== tl){ toast('Drop it on a task in the same list.'); return; }
-  const _s = grab(), arr = clone(getBlocks(l)), i = arr.findIndex(x => x.id === id), j = arr.findIndex(x => x.id === beforeId), wk = x => x.w || 'climb1';
+  const _s = grab(), arr = clone(getBlocks(l)), i = arr.findIndex(x => sameId(x.id, id)), j = arr.findIndex(x => sameId(x.id, beforeId)), wk = x => x.w || 'climb1';
   if (i < 0 || j < 0 || wk(arr[i]) !== wk(arr[j])){ toast('Drop it on a task in the same window.'); return; }
   if (arr[i].fixed !== undefined || arr[i].at !== undefined){ toast('This task is ordered by its Start time. Change it in Edit to move it.'); return; }
-  needLive(); const [x] = arr.splice(i, 1); arr.splice(arr.findIndex(z => z.id === beforeId), 0, x);
+  needLive(); const [x] = arr.splice(i, 1); arr.splice(arr.findIndex(z => sameId(z.id, beforeId)), 0, x);
   setBlocks(l, arr); render(); showUndo(l === 'oo' ? 'Reordered' : 'Reordered for all days', _s);
 }
 
@@ -1937,7 +2080,7 @@ $('#fabMenu').addEventListener('click', e => {
   if (e.target === $('#fabMenu')){ $('#fabMenu').close(); return; }
   const b = e.target.closest('button'); if (!b) return;
   $('#fabMenu').close();
-  if (b.dataset.a === 'add'){ openEd('oo', null, defaultWin()); cur.addScope = true; }
+  if (b.dataset.a === 'add'){ openEd('oo', null, defaultWin()); cur.addScope = true; drawEdTypes(); }
   else if (b.dataset.a === 'inbox'){ setTab('inbox'); setTimeout(() => $('#inT') && $('#inT').focus(), 60); }
   else if (b.dataset.a === 'late') openShift();
   else openMv('day');
@@ -1964,7 +2107,7 @@ function drawEmpty(){
   const el = $('#emptyCard'); if (!el) return;
   el.hidden = schedule().rows.some(r => r.use > 0 && !r.sug);
 }
-$('#emptyAdd').addEventListener('click', () => { openEd('oo', null, defaultWin()); cur.addScope = true; });
+$('#emptyAdd').addEventListener('click', () => { openEd('oo', null, defaultWin()); cur.addScope = true; drawEdTypes(); });
 $('#hdrTitle').addEventListener('click', () => { if (document.body.dataset.tab === 'home' && viewDate !== todayStr()) goDate(todayStr()); });
 function focusNow(){ if (viewDate !== todayStr()) return; const r = document.querySelector('.tlrow.now'); if (r) r.scrollIntoView({ block:'center' }); }
 
@@ -1977,7 +2120,22 @@ function focusNow(){ if (viewDate !== todayStr()) return; const r = document.que
       '<details class="clog"' + (i === 0 ? ' open' : '') + '><summary>v' + esc(c.v) + '<span>' + esc(c.date) + '</span></summary>' + sect('Added', c.added) + sect('Changed', c.changed) + sect('Fixed', c.fixed) + '</details>').join('') + '</div>');
 })();
 const tabs = document.querySelectorAll('.tabs button');
+// ---- Android back button (only wired up inside the Android app) ----
+const BACK_ORDER = ['scopeDlg', 'iconPick', 'colorSheet', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
+function handleBack(){
+  for (const id of BACK_ORDER){
+    const d = document.getElementById(id);
+    if (!d || !d.open) continue;
+    const x = id === 'fabMenu' ? null : d.querySelector('#sc_x,#ip_x,#mv_x,#snap_x,#sh_x,#clr_x,#runClose,#ss_close,#e_x');
+    if (x) x.click(); else d.close();
+    return true;
+  }
+  if (document.body.dataset.tab !== 'home'){ setTab('home'); return true; }
+  return false;
+}
+{ const app = nativePlugin('App'); if (app) app.addListener('backButton', () => { if (!handleBack()) app.exitApp(); }); }
 function setTab(t){
+  if (toastUntil && Date.now() - toastShownAt > 500) hideToast();   // a message from the previous screen shouldn't follow you around
   tabs.forEach(b => { b.classList.toggle('on', b.dataset.tab === t); b.setAttribute('aria-selected', b.dataset.tab === t); b.setAttribute('aria-controls', 'tab-' + b.dataset.tab); });
   document.querySelectorAll('.tab').forEach(sec => { sec.hidden = sec.id !== 'tab-' + t; sec.setAttribute('role', 'tabpanel'); });
   store.set('tab', t); document.body.dataset.tab = t; drawHdr();
@@ -1988,6 +2146,8 @@ const FRESH = ['hist', 'plans', 'blocks', 'day', 'wake', 'setup'].every(k => sto
 migrateFields();
 migrateV2();
 migrateV3();
+// Older versions could leave tasks with no id, a number for an id, or two tasks in a list with the same id.
+{ const b = store.get('blocks', null); if (b){ const r = normalizeIds(b); if (r.changed) store.set('blocks', r.blocks); } }
 render();
 if (FRESH) openSetup();
 setTimeout(focusNow, 150);
@@ -2032,7 +2192,7 @@ updateBackupInfo();
 if ($('#settingsBtn').classList.contains('nudge') && store.get('bkAsk', '') !== todayStr()){ store.set('bkAsk', todayStr()); setTimeout(() => toast('Time for a backup. Your data lives only on this device.', 'Back up', shareBackup), 1500); }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
-if ('serviceWorker' in navigator){
+if ('serviceWorker' in navigator && !IS_NATIVE){
   // The page may already have finished loading by the time this script runs (startup waits for saved data).
   const registerSw = () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); };
   if (document.readyState === 'complete') registerSw(); else window.addEventListener('load', registerSw);

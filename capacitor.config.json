@@ -1,0 +1,8 @@
+{
+  "appId": "app.yotei",
+  "appName": "Yotei",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "android": { "backgroundColor": "#1c1c1e" },
+  "plugins": { "SystemBars": { "insetsHandling": "css" } }
+}

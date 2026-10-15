@@ -102,11 +102,11 @@ export const onStoreError = fn => { onError = fn; };
 function queue(k){
   if (backend !== 'idb') return;
   pending.add(k);
-  if (!timer) timer = setTimeout(flush, 20);
+  if (!timer){ timer = 1; queueMicrotask(flush); }   // writes made in the same moment go out together, and start right away
 }
 
 export function flush(){
-  clearTimeout(timer); timer = 0;
+  timer = 0;
   if (!db || !pending.size) return inflight;
   const batch = [...pending].map(k => [k, cache.has(k) ? cache.get(k) : null]);
   pending.clear();

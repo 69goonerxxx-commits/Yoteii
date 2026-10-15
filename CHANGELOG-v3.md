@@ -1,6 +1,10 @@
-# Yotei v3: changes so far (draft)
+# Yotei v3.0.1 (3.0.0 notes below)
 
-The in-app version stays 2.6.5 until v3 is released. When it ships: add an entry at the top of `CHANGELOG` in `about.js`, bump `APP_VERSION`, bump `CACHE` in `sw.js`.
+Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 entry in `about.js`.
+
+## 3.0.1
+- Saves now start straight away. A change made in the last instant before the app closed or reloaded could be lost (measured: 60 of 60 in the worst case, now 0 of 60).
+- Android app groundwork: Capacitor project and GitHub build, backups through the Android share sheet, back button handling, status and navigation bar spacing, no service worker inside the app.
 
 ## Under the hood
 - Split the single 3,300-line file into modules (`engine.js`, `icons.js`, `validate.js`, `styles.css`, and more). No change in behavior, checked against v2.6.5.
@@ -28,6 +32,16 @@ The in-app version stays 2.6.5 until v3 is released. When it ships: add an entry
 - Existing data is converted automatically on first launch. A snapshot of the old data ("Before the update") is kept first.
 - Backups are now version 3. Backups made by v2.6.5 still import and are converted on the way in. A v3 backup cannot be loaded by v2.6.5.
 - Restoring a snapshot taken before the update converts it as well.
+
+## Timeline and editor
+- The timeline sits about 12px further left (icons, text and the vertical line). The tick buttons stay where they were.
+- Free time is now shown everywhere it exists: before the first task, between tasks, after the last task, and for blocks with no tasks. Each gap has a broken line, a "free" label and an always-visible "+ Add task" that opens the editor at that time. Gaps under 5 minutes are not shown. Past days (saved records) show gaps without the add button.
+- End time first: set an End time and Yotei counts back from it using the length (6:00 AM and 20 minutes gives a 5:40 AM start). The End stays put when the length changes. Typing a Start works as before.
+- Editor error messages no longer vanish the moment they appear (the old "add a start time" message was hidden instantly).
+- Day types: a task can be added to Home, School, Away, any two, or all three. One copy is saved per type, linked together. Editing a linked task updates every copy, and ticking or unticking a type adds or removes that copy. "Only this day" ignores the types. Morning and night routine tasks are unchanged.
+- Icon picking: a cloud icon that is still downloading can no longer land on a different task later. The tile shows a loading state, gives up after 8 seconds with a message, and works out when offline.
+- Toasts: wider, centered, above the round + button. They can no longer stay on screen (timestamp safety net), and tapping one dismisses it. Moving to another screen clears an older one.
+- Delete always works: tasks with no id, a number as an id or a duplicate id are repaired at startup, a task filed in the wrong list is found, and deleting one that no longer exists just completes. On a past day, deleting removes the task from that day's saved record (with Undo). The "no longer in your routines" message now offers "Delete it".
 
 ## Still planned
 - Android app build with native reminders.

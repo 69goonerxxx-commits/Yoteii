@@ -1,8 +1,8 @@
-export const APP_VERSION = '2.6.5';
+export const APP_VERSION = '3.0.1';
 export const FEATURES = [
   'A daily timeline built from your wake time, split into seven energy windows',
   'Morning and Night Routines that shrink (optional, then flexible, then core) to fit',
-  'Home, School and Away modes for each window of the day',
+  'Home, School and Away modes for each window of the day, and tasks you can add to any mix of the three',
   'Every day is usable: plan upcoming days and update past ones',
   'Tasks with colors, 388 icons, subtasks, notes, fixed times and weekday rules',
   'Edit, reorder, duplicate or delete tasks and blocks (long-press to edit)',
@@ -16,16 +16,41 @@ export const FEATURES = [
   'Move, copy, copy a whole day, or push the day later when running late',
   'Past days keep their saved record until you edit them',
   'Calendar (.ics) import, light theme and larger text',
-  'Backup and restore, installable and works offline'
+  'Backup and restore, a daily snapshot you can restore from, installable and works offline'
 ];
 export const LIMITS = [
-  'Your data lives in this browser only, so export a backup now and then',
+  'Your data lives on this device only (daily snapshots are kept here too), so export a backup now and then',
   'Past days are rebuilt from your current task list, so they can differ from how that day originally looked',
   'Reminders only fire while Yotei is open or running in the background',
   'Calendar import is a one-time copy of timed events, not a live sync',
   'Fonts need one online load before they work offline'
 ];
 export const CHANGELOG = [
+  { v:'3.0.1', date:'Oct 2026',
+    added:[
+      'Ready for the Android app: backups use the Android share sheet, the back button closes whatever is open and then returns to the timeline, and screens respect the status and navigation bars'],
+    fixed:[
+      'A change made in the last instant before closing the app could be lost. Saves now start straight away'] },
+  { v:'3.0.0', date:'Oct 2026',
+    added:[
+      'Day types: add a task to Home, School, Away, any two or all three. Linked copies stay in step when you edit one',
+      'Free time shows as a dashed gap with a + Add task button before, between and after tasks, and in blocks with nothing in them',
+      'Set an End time first and Yotei works out the Start from the task length',
+      'A snapshot of your data is kept once a day and before every import (the last 7). Settings, Backup, Snapshots restores one',
+      'If the app ever fails to start, a red box names what went wrong'],
+    changed:[
+      'Your data now lives in IndexedDB instead of localStorage: far more room, and saves are batched and flushed whenever the app is hidden. Existing data is moved over automatically, with a snapshot kept first',
+      'Days are stored as 2026-10-11 instead of Sun Oct 11 2026. Backup files are now version 3, and older backups still import',
+      'Importing a backup checks the whole file and refuses damaged or newer ones without touching your data',
+      'The timeline sits further left, and messages are wider, centered and above the + button',
+      'Reset routine can be undone for a few seconds, and Clear data also removes snapshots'],
+    fixed:[
+      'Delete always works now: tasks from older versions with no id, a number as an id or a duplicate id are repaired, tasks can be removed from a past day\'s record, and the no longer in your routines message offers Delete it',
+      'Picking a slow cloud icon could change a different task\'s icon later. It now shows a loading state and gives up after 8 seconds',
+      'The Task updated message could stay on screen. Messages now always disappear, and tapping one dismisses it',
+      'Editor messages (like the End time one) disappeared the instant they appeared',
+      'A save that failed because storage was full or blocked used to be silent. Now you get a warning and a Back up button',
+      'Letters inside words picked wrong icons, like Start or Party getting the palette icon'] },
   { v:'2.6.5', date:'Oct 2026',
     added:['Fixed time is now a switch in the task editor, off by default. Start and End are optional and blank on a new task', 'The icon picker is now full-screen, with a scrollable category bar at the bottom and an icon for each category', 'Hundreds more solid icons in new categories (Bathroom, Clothes, Home, Education, Tech, Transport, Fitness, Medical, Food, Nature, Animals, Work, Fun, Time & rest). They load from the internet the first time you pick one and are then saved on this device'],
     changed:['Without Fixed time, a Start time is a preferred time: the task goes in that part of the day and starts no earlier than that, but can start later if the tasks before it run long', 'The timeline sits closer to the left edge'],
