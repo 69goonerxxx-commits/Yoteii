@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.0.2';
+export const APP_VERSION = '3.0.3';
 export const FEATURES = [
   'A daily timeline built from your wake time, split into seven energy windows',
   'Morning and Night Routines that shrink (optional, then flexible, then core) to fit',
@@ -25,6 +25,10 @@ export const LIMITS = [
   'Calendar import is a one-time copy of timed events, not a live sync'
 ];
 export const CHANGELOG = [
+  { v:'3.0.3', date:'Oct 2026',
+    fixed:[
+      'Android app: the extra empty space above the header (it vanished when you scrolled) is gone. The status bar space was being added twice',
+      'Typing in the day note or any field: the tab bar, + button and week strip step aside while the keyboard is open, and the field scrolls into view instead of hiding under the header'] },
   { v:'3.0.2', date:'Oct 2026',
     added:[
       'Android app: real reminders. They are scheduled with the phone for today and the next two days, fire when the app is closed, and survive a restart. Choose at start, 5 or 10 minutes before',

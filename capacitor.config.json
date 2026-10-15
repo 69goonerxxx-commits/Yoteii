@@ -10,7 +10,8 @@
   },
   "plugins": {
     "SystemBars": {
-      "insetsHandling": "css"
+      "insetsHandling": "native",
+      "initialViewportFitValueHint": "cover"
     },
     "LocalNotifications": {
       "smallIcon": "ic_stat_yotei",

@@ -537,3 +537,15 @@ html[data-text=large] .biIn{zoom:1.15}
 
 .typesRow{border-bottom:1px solid var(--line);padding-bottom:12px}
 .typesLbl{margin:6px 0;font-size:13px;color:var(--sec);font-weight:600}
+
+/* ---- v3.0.3: status bar space and keyboard ----
+   Android either pads the WebView below the status bar (insets read 0) or draws edge to edge (insets > 0).
+   The header sticks just under the status bar in both cases, and a strip in the page colour hides what scrolls behind the clock. */
+.top{top:var(--sai-t)}
+#tab-home .weekstrip{top:calc(var(--sai-t) + var(--topH,60px))}
+body::before{content:'';position:fixed;top:0;left:0;right:0;height:var(--sai-t);background:var(--bg);z-index:40;pointer-events:none}
+/* keyboard open: more room for what you are typing */
+body.kb .tabs,body.kb #fab{display:none!important}
+body.kb #tab-home .weekstrip{display:none}
+body.kb .panel{min-height:0}
+textarea,input{scroll-margin-top:calc(var(--sai-t) + var(--topH,60px) + 16px)}

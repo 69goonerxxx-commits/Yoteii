@@ -1,6 +1,10 @@
-# Yotei v3.0.2 (3.0.0 notes below)
+# Yotei v3.0.3 (3.0.0 notes below)
 
 Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 entry in `about.js`.
+
+## 3.0.3
+- Header space: Capacitor padded the WebView below the status bar and also injected the same inset as a CSS variable, so the page added it a second time (an empty band above the title that vanished on scroll). SystemBars now uses insetsHandling "native" with viewport-fit cover hinted, so the CSS reads the inset only when the WebView really is edge to edge. The header sticks at the inset, with a strip in the page colour behind the status bar.
+- Keyboard: while a text field is focused and the viewport has shrunk, body gets class kb: the tab bar, + button and week strip hide, and the field scrolls to the centre of what is left.
 
 ## 3.0.2
 - Android reminders: scheduled with the phone (Capacitor Local Notifications) for today and the next two days, replanned whenever the screen changes or the app is opened. They fire with the app closed and are restored after a restart. Permission prompt, exact-timing setting and a test button are in Settings.

@@ -1230,6 +1230,20 @@ $('.panel').addEventListener('pointerup', e => {
 });
 $('.panel').addEventListener('pointercancel', () => { dsX = null; });
 $('.panel').addEventListener('click', e => { if (Date.now() - dsFired < 400){ e.stopPropagation(); e.preventDefault(); } }, true);
+// ---- keyboard: when it opens the page shrinks, so hide the tab bar, + button and week strip and keep the field in view ----
+let vhMax = innerHeight, vwLast = innerWidth;
+function kbUpdate(){
+  if (innerWidth !== vwLast){ vwLast = innerWidth; vhMax = innerHeight; }          // rotated: measure again
+  vhMax = Math.max(vhMax, innerHeight);
+  const ae = document.activeElement;
+  const typing = !!ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && !/^(checkbox|radio|button|file|range|color|submit)$/.test(ae.type || '');
+  const open = typing && innerHeight < vhMax - 120, was = document.body.classList.contains('kb');
+  document.body.classList.toggle('kb', open);
+  if (open && !was && !ae.closest('dialog')) setTimeout(() => { try{ ae.scrollIntoView({ block:'center', behavior:'smooth' }); }catch{} }, 120);
+}
+window.addEventListener('resize', kbUpdate);
+document.addEventListener('focusin', () => setTimeout(kbUpdate, 250));
+document.addEventListener('focusout', () => setTimeout(kbUpdate, 100));
 function setTopH(){ const t = document.querySelector('.top'); if (t) document.documentElement.style.setProperty('--topH', t.getBoundingClientRect().height + 'px'); }
 setTopH(); window.addEventListener('resize', setTopH);
 if (window.ResizeObserver) new ResizeObserver(setTopH).observe(document.querySelector('.top'));

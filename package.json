@@ -1,6 +1,6 @@
 {
   "name": "yotei",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "private": true,
   "description": "A daily schedule that flows from your wake time.",
   "type": "module",
