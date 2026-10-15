@@ -8,8 +8,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Yotei">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="manifest" href="./manifest.webmanifest">
 <script>
 /* Startup safety net: if a file fails to load or the app crashes, say so on screen. */
@@ -53,7 +51,6 @@ window.addEventListener('load',function(){
 <script>try{var D=document.documentElement,T=JSON.parse(localStorage.getItem('yotei_v2_theme')||'"dark"');if(T==='auto')T=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';D.dataset.theme=T;D.dataset.text=JSON.parse(localStorage.getItem('yotei_v2_text')||'"normal"')}catch(e){}</script>
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
 <link rel="apple-touch-icon" href="./icon-180.png">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -89,7 +86,7 @@ window.addEventListener('load',function(){
 
   <section id="tab-settings" class="tab" hidden>
     <div class="sleep"><h2>Editing</h2><p class="wn">Tap any task to edit, move, copy or delete it, and press and hold a task to drag it. Turn this on to also show + Add task, Edit block and drag handles, and to open the editor straight from a tap.</p><button class="add" id="editToggle">Turn on editing</button></div>
-    <div class="sleep"><h2>Backup</h2><p class="wn">Your tasks, blocks and history live in this browser only. Export a copy so clearing the browser does not erase them.</p><p class="wn" id="bkInfo"></p><div class="ea"><button id="exp">Export</button><button id="shareBk">Share</button><button id="imp">Import</button><button id="snapBtn">Snapshots</button><button id="clrAll" class="danger">Clear data</button></div><input type="file" id="impf" accept=".json,application/json" hidden></div>
+    <div class="sleep"><h2>Backup</h2><p class="wn" id="bkWhy">Your tasks, blocks and history live in this browser only. Export a copy so clearing the browser does not erase them.</p><p class="wn" id="bkInfo"></p><div class="ea"><button id="exp">Export</button><button id="shareBk">Share</button><button id="imp">Import</button><button id="snapBtn">Snapshots</button><button id="clrAll" class="danger">Clear data</button></div><input type="file" id="impf" accept=".json,application/json" hidden></div>
     <div class="sleep">
       <h2>Sleep caps</h2>
       <div id="sleep"></div>

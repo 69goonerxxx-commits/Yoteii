@@ -1,14 +1,14 @@
 // Unit tests for the scheduling engine. Run with: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSchedule, applyOvr, typeOfIn, isoLocal } from '../src/engine.js';
+import { buildSchedule, applyOvr, typeOfIn, isoLocal } from '../engine.js';
 
 const WIN = { sleep:{from:0}, climb1:{from:60}, peak:{from:180}, trough:{from:360}, climb2:{from:480}, wmz:{from:720}, wind:{from:900} };
 const fmt = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; const h = Math.floor(m / 60), mm = m % 60; return [((h + 11) % 12 + 1) + ':' + String(mm).padStart(2, '0'), h < 12 ? 'AM' : 'PM']; };
 const mk = (o = {}) => {
   const blocks = { pre: [], night: [], home: [], school: [], away: [], ...(o.blocks || {}) };
   const MODES = { home:{deadline:null,msg:'home',post:blocks.home}, school:{deadline:360,post:blocks.school}, away:{deadline:null,msg:'away',post:blocks.away}, none:{deadline:null,msg:'none',post:[]} };
-  const day = { date:'Sun Oct 11 2026', types:{ climb1:'home' }, oneoffs:[], shift:null, ...(o.day || {}) };
+  const day = { date:'2026-10-11', types:{ climb1:'home' }, oneoffs:[], shift:null, ...(o.day || {}) };
   return { dow:0, wake:300, day, CAP:{ soft:1320, hard:1380 }, MODES, WIN, OV:{}, wins:() => WIN, fmt, getBlocks: l => l === 'oo' ? day.oneoffs : blocks[l] || [], ...o.ctx };
 };
 const task = (id, d, p, extra = {}) => ({ id, t:id, d, p, ...extra });
@@ -17,10 +17,10 @@ test('an empty day produces no rows', () => {
   assert.deepEqual(buildSchedule(mk()).rows, []);
 });
 
-test('early start before a deadline adds a buffer', () => {
+test('early start before a deadline reports the spare time but adds no task', () => {
   const r = buildSchedule(mk({ day:{ types:{ climb1:'school' } }, blocks:{ pre:[task('a', 30, 'core', { m:10 }), task('b', 15, 'flex', { m:5 })] } }));
-  assert.equal(r.msg, 'Early start: 15 min of buffer added before you leave at 6:00 AM.');
-  assert.equal(r.rows.at(-1).id, 'buf');
+  assert.equal(r.msg, 'Early start: 15 min free before you leave at 6:00 AM.');
+  assert.ok(!r.rows.some(row => row.id === 'buf'));
   assert.equal(r.rows.at(-1).use, 15);
 });
 

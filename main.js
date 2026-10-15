@@ -1126,7 +1126,7 @@ async function openSnaps(){
   let L = []; try{ L = await listSnapshots(); }catch{}
   $('#snapList').innerHTML = L.length
     ? L.map(x => '<div class="snapRow"><span>' + esc(new Date(x.at).toLocaleString(undefined, { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })) + ' · ' + esc(why[x.reason] || x.reason) + '</span><button data-id="' + esc(x.id) + '">Restore</button></div>').join('')
-    : '<p class="wn">' + (info().backend === 'idb' ? 'No snapshots yet. The first one is saved the next time you open Yotei on a new day.' : 'Snapshots are not available in this browser.') + '</p>';
+    : '<p class="wn">' + (info().backend === 'idb' ? 'No snapshots yet. The first one is saved the next time you open Yotei on a new day.' : 'Snapshots are not available ' + (IS_NATIVE ? 'on this device.' : 'in this browser.')) + '</p>';
   $('#snapDlg').showModal();
 }
 $('#snapBtn').onclick = openSnaps;
@@ -1340,6 +1340,7 @@ function applyTpl(list, name){
 }
 function remCard(){
   const R = store.get('rem', { on:false, lead:0 }), has = 'Notification' in window, perm = has ? Notification.permission : 'unsupported', on = R.on && perm === 'granted';
+  if (IS_NATIVE) return '<h2>Reminders</h2><p class="wn">Reminders are not available in the Android app yet. For now, open Yotei to see what is next.</p>';
   const state = !has ? 'Notifications are not available in this browser. On iPhone, add Yotei to your Home Screen first.' : perm === 'denied' ? 'Notifications are blocked. Allow them for this site in your browser settings.' : on ? 'Reminders are on.' : 'Reminders are off.';
   return '<h2>Reminders</h2><p class="wn">' + state + '</p><p class="wn">They only fire while Yotei is open or running in the background, and phones may pause web apps. Keep Yotei open if timing matters.</p><div class="capRow"><label for="remLead">Remind me</label><select id="remLead">' + [[0, 'At start'], [5, '5 min before'], [10, '10 min before']].map(o => '<option value="' + o[0] + '"' + (R.lead === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div><div class="ea"><button id="remToggle">' + (on ? 'Turn off' : 'Turn on') + '</button><button id="remTest">Send test</button></div>';
 }
@@ -2188,6 +2189,7 @@ function updateBackupInfo(){
   $('#settingsBtn').classList.toggle('nudge', needs); document.querySelector('.tabs [data-tab=settings]').classList.toggle('nudge', needs);
   $('#settingsBtn').setAttribute('aria-label', needs ? 'Settings, backup suggested' : 'Settings');
 }
+if (IS_NATIVE) $('#bkWhy').textContent = 'Your tasks, blocks and history live on this device only. Export a copy so uninstalling the app or clearing its data does not erase them.';
 updateBackupInfo();
 if ($('#settingsBtn').classList.contains('nudge') && store.get('bkAsk', '') !== todayStr()){ store.set('bkAsk', todayStr()); setTimeout(() => toast('Time for a backup. Your data lives only on this device.', 'Back up', shareBackup), 1500); }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
