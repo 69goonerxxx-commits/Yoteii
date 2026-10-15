@@ -38,6 +38,18 @@
   window.addEventListener('unhandledrejection',function(e){ add('Error: '+((e.reason&&e.reason.message)||e.reason)); });
 })();
 </script>
+<script>
+/* Diagnostic: if the red box appears, report which app files are missing or unreadable. */
+window.addEventListener('load',function(){
+  setTimeout(function(){
+    if(!document.getElementById('yoteiErr')) return;
+    ['main.js','util.js','validate.js','tasks.js','engine.js','dates.js','migrate.js','icons.js','templates.js','science.js','about.js','storage.js','styles.css'].forEach(function(f){
+      var say=function(m){var b=document.getElementById('yoteiErr'); if(b) b.textContent+='\nMISSING: '+f+' ('+m+')';};
+      fetch('./'+f,{cache:'no-store'}).then(function(r){ if(!r.ok) say('HTTP '+r.status); }).catch(function(){ say('fetch failed'); });
+    });
+  },600);
+});
+</script>
 <script>try{var D=document.documentElement,T=JSON.parse(localStorage.getItem('yotei_v2_theme')||'"dark"');if(T==='auto')T=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';D.dataset.theme=T;D.dataset.text=JSON.parse(localStorage.getItem('yotei_v2_text')||'"normal"')}catch(e){}</script>
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
 <link rel="apple-touch-icon" href="./icon-180.png">
