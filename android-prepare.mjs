@@ -45,4 +45,15 @@ writeFileSync(`${APP}/res/mipmap-anydpi-v26/ic_launcher_round.xml`, adaptive);
 writeFileSync(`${APP}/res/values/ic_launcher_background.xml`, '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0A1226</color>\n</resources>\n');
 console.log('launcher icons written');
 
+// ---- small icon for reminder notifications: Android wants a white shape on a transparent background ----
+{
+  const glyph = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  for (const [d, k] of Object.entries(DENSITY)) {
+    const dir = `${APP}/res/drawable-${d}`; mkdirSync(dir, { recursive: true });
+    const px = Math.round(24 * k);
+    await sharp(Buffer.from(glyph), { density: 384 }).resize(px, px).png().toFile(`${dir}/ic_stat_yotei.png`);
+  }
+  console.log('notification icon written');
+}
+
 if (!existsSync(`${APP}/AndroidManifest.xml`)) warn('AndroidManifest.xml not found');

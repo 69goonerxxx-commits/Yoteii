@@ -2,7 +2,19 @@
   "appId": "app.yotei",
   "appName": "Yotei",
   "webDir": "www",
-  "server": { "androidScheme": "https" },
-  "android": { "backgroundColor": "#1c1c1e" },
-  "plugins": { "SystemBars": { "insetsHandling": "css" } }
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#1c1c1e"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_yotei",
+      "iconColor": "#5E96CB"
+    }
+  }
 }

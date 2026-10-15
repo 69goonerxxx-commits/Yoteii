@@ -612,8 +612,8 @@ $('#ts_done').onclick = () => {
   saveDay(); $('#taskSheet').close(); render(); if (i === -1) offerTickAll(k);
 };
 $('#ts_edit').onclick = () => { $('#taskSheet').close(); openEd(sheetCtx.l, sheetCtx.id); };
-$('#ts_del').onclick = () => {
-  if (!confirm('Delete this task?')) return;
+$('#ts_del').onclick = async () => {
+  if (!await ask('Delete this task?', { ok:'Delete', danger:true })) return;
   setBlocks(sheetCtx.l, clone(getBlocks(sheetCtx.l)).filter(x => !sameId(x.id, sheetCtx.id)));
   $('#taskSheet').close(); render();
 };
@@ -859,6 +859,7 @@ function saveHist(){
 // draw() builds today's live interactive timeline.
 // ============================================================
 function render(){
+  remSoon();
   applyWinColors();
   drawNav();
   if (document.activeElement !== $('#dnote')) $('#dnote').value = day.note || '';
@@ -1072,6 +1073,31 @@ setInterval(dayTick, 20000);
 $('#dnote').value = day.note || '';
 $('#dnote').addEventListener('input', e => { day.note = e.target.value; saveDay(); });
 // ============================================================
+// IN-APP MESSAGES: replace the browser's confirm() and alert() popups
+// ask(text, opts) -> Promise<boolean>.  tell(text) -> shows a message with one OK button.
+// opts: title, ok (button text), cancel (button text), danger (red OK), info (no Cancel button)
+// ============================================================
+var mdResolve = null;
+function mdClose(v){ const d = $('#msgDlg'), r = mdResolve; mdResolve = null; if (d.open) d.close(); if (r) r(v); }
+function ask(text, opts = {}){
+  return new Promise(res => {
+    if (mdResolve) mdClose(false);
+    mdResolve = res;
+    const t = $('#md_title'); t.textContent = opts.title || ''; t.hidden = !opts.title;
+    $('#md_text').textContent = text;
+    const no = $('#md_no'), ok = $('#md_ok');
+    no.hidden = !!opts.info; no.textContent = opts.cancel || 'Cancel';
+    ok.textContent = opts.ok || 'OK'; ok.classList.toggle('danger', !!opts.danger);
+    $('#msgDlg').showModal();
+    (opts.info ? ok : no).focus();       // for questions the safe choice (Cancel) is the one highlighted
+  });
+}
+const tell = text => ask(text, { info:true });
+$('#md_ok').onclick = () => mdClose(true);
+$('#md_no').onclick = () => mdClose(false);
+$('#msgDlg').addEventListener('close', () => { const r = mdResolve; mdResolve = null; if (r) r(false); });   // Esc or the Android back button
+
+// ============================================================
 // IMPORT / EXPORT / RESET
 // ============================================================
 // Backup files keep the v2 layout (keys carry the yotei_v2_ prefix), so they stay readable by older versions.
@@ -1083,7 +1109,7 @@ async function saveBackupNative(name, json){
     const r = await fs.writeFile({ path:name, data:json, directory:'CACHE', encoding:'utf8' });
     await sh.share({ title:'Yotei backup', url:r.uri, dialogTitle:'Save your Yotei backup' });
     store.set('lastBackup', Date.now()); updateBackupInfo();
-  }catch(e){ if (!/cancel/i.test(String((e && e.message) || e))) alert('Could not save the backup. Please try again.'); }
+  }catch(e){ if (!/cancel/i.test(String((e && e.message) || e))) tell('Could not save the backup. Please try again.'); }
   return true;
 }
 async function exportData(){
@@ -1096,15 +1122,15 @@ async function exportData(){
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 function importData(file){
-  if (file.size > 8 * 1024 * 1024){ alert('That file is too large to be a Yotei backup. Nothing was changed.'); return; }
+  if (file.size > 8 * 1024 * 1024){ tell('That file is too large to be a Yotei backup. Nothing was changed.'); return; }
   const r = new FileReader();
   r.onload = async () => {
     let j = null;
     try{ j = JSON.parse(r.result); }catch{}
     const P = 'yotei_v2_';
     const chk = validateBackup(j, P);
-    if (!chk.ok){ alert('That file can\'t be used as a Yotei backup because ' + chk.why + '. Nothing was changed.'); return; }
-    if (!confirm('Replace everything in Yotei with this backup?')) return;
+    if (!chk.ok){ tell('That file can\'t be used as a Yotei backup because ' + chk.why + '. Nothing was changed.'); return; }
+    if (!await ask('Replace everything in Yotei with this backup?', { ok:'Replace', danger:true })) return;
     const old = store.dump(); let data = {};
     Object.keys(j.data).forEach(k => { data[k.slice(P.length)] = j.data[k]; });
     if (needsDateMigration(data)) data = migrateDates(data);   // backups from v2 use the old day format
@@ -1112,14 +1138,14 @@ function importData(file){
     try{ await replaceAll(data); }
     catch{
       try{ await replaceAll(old); }catch{}
-      alert('Import failed, possibly because storage is full. Your previous data was restored.');
+      tell('Import failed, possibly because storage is full. Your previous data was restored.');
       return;
     }
     location.reload();
   };
   r.readAsText(file);
 }
-$('#rst').addEventListener('click', () => { if (confirm('Remove every routine task and reset all block names, colors and times? Your history is kept. You can undo this right after.')){ const snap = grab(); ['blocks', 'wins', 'ovr', 'wovr'].forEach(k => store.remove(k)); render(); showUndo('Routine reset', snap); } });
+$('#rst').addEventListener('click', async () => { if (await ask('Remove every routine task and reset all block names, colors and times? Your history is kept. You can undo this right after.', { ok:'Reset', danger:true })){ const snap = grab(); ['blocks', 'wins', 'ovr', 'wovr'].forEach(k => store.remove(k)); render(); showUndo('Routine reset', snap); } });
 $('#exp').onclick = exportData;
 async function openSnaps(){
   const why = { daily:'Daily', 'before-import':'Before an import', 'before-restore':'Before a restore', 'before-upgrade':'Before the update' };
@@ -1133,8 +1159,8 @@ $('#snapBtn').onclick = openSnaps;
 $('#snap_x').onclick = () => $('#snapDlg').close();
 $('#snapList').addEventListener('click', async e => {
   const b = e.target.closest('button[data-id]'); if (!b) return;
-  if (!confirm('Replace everything in Yotei with this snapshot? Your current data is saved as a snapshot first.')) return;
-  try{ await restoreSnapshot(b.dataset.id); location.reload(); }catch{ alert('Could not restore that snapshot. Nothing was changed.'); }
+  if (!await ask('Replace everything in Yotei with this snapshot? Your current data is saved as a snapshot first.', { ok:'Replace', danger:true })) return;
+  try{ await restoreSnapshot(b.dataset.id); location.reload(); }catch{ tell('Could not restore that snapshot. Nothing was changed.'); }
 });
 $('#imp').onclick = () => $('#impf').click();
 $('#impf').onchange = e => { const f = e.target.files[0]; if (f) importData(f); e.target.value = ''; };
@@ -1333,14 +1359,74 @@ function tplApply(list, name){
   bl[list] = TPL[list].sets[name].map((x, i) => ({ id:'t' + Date.now().toString(36) + i, t:x[0], d:x[1], m:x[2], p:x[3] }));
   store.set('blocks', bl);
 }
-function applyTpl(list, name){
+async function applyTpl(list, name){
   const min = TPL[list].sets[name].reduce((a, x) => a + x[1], 0);
-  if (!confirm('Replace your ' + TPL[list].label.toLowerCase() + ' with "' + name + '" (' + min + ' min)? Your current list for this routine will be overwritten.')) return;
+  if (!await ask('Replace your ' + TPL[list].label.toLowerCase() + ' with "' + name + '" (' + min + ' min)? Your current list for this routine will be overwritten.', { ok:'Replace' })) return;
   tplApply(list, name); render();
+}
+// ---- Android app: reminders are handed to the phone's alarm system, so they fire when the app is closed ----
+var remNative = { perm:null, exact:null }, remTimer = null, remBusy = false, remAgain = false, remSig = null;
+const REM_DAYS = 3, REM_CHANNEL = 'yotei-reminders', REM_TEST_ID = 1;
+async function remNativeState(){
+  const LN = nativePlugin('LocalNotifications'); if (!LN) return;
+  try{ remNative.perm = (await LN.checkPermissions()).display; }catch{}
+  try{ remNative.exact = (await LN.checkExactNotificationSetting()).exact_alarm; }catch{ remNative.exact = 'granted'; }
+  const c = $('#remCard'); if (c) c.innerHTML = remCard();
+}
+function remRowsFor(ds){
+  const sv = { wake, day, done };
+  try{ loadDay(ds); return { rows: build(dowOf(ds)).rows, done: done.ids.slice() }; }
+  finally{ wake = sv.wake; day = sv.day; done = sv.done; }
+}
+function remId(s){ let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return (h & 0x7fffffff) || 2; }
+function remPlan(R){
+  const out = [], now = Date.now(), seen = new Set();
+  for (let i = 0; i < REM_DAYS; i++){
+    const d = parseDay(todayStr()); d.setDate(d.getDate() + i);
+    const ds = isoLocal(d), { rows, done: dn } = remRowsFor(ds);
+    rows.filter(r => r.use > 0 && !r.sug && !dn.includes(r.id)).forEach(r => {
+      const at = parseDay(ds); at.setHours(0, r.start - R.lead, 0, 0);
+      if (at.getTime() <= now + 2000) return;
+      let id = remId(ds + '|' + r.id + '|' + r.start); while (id === REM_TEST_ID || seen.has(id)) id++; seen.add(id);
+      out.push({ id, at, title: R.lead ? r.t + ' in ' + R.lead + ' min' : 'Time for ' + r.t, body: range(r.start, r.end) });
+    });
+  }
+  return out.sort((a, b) => a.at - b.at).slice(0, 60);
+}
+function remSoon(force){
+  if (!IS_NATIVE) return;
+  if (force) remSig = null;
+  clearTimeout(remTimer); remTimer = setTimeout(remSync, 2500);
+}
+async function remChannel(LN){ await LN.createChannel({ id:REM_CHANNEL, name:'Task reminders', description:'Tells you when a task is about to start', importance:4, vibration:true }); }
+async function remSync(){
+  const LN = nativePlugin('LocalNotifications'); if (!LN) return;
+  if (remBusy){ remAgain = true; return; }
+  remBusy = true;
+  try{
+    const R = store.get('rem', { on:false, lead:0 });
+    const ok = R.on && (await LN.checkPermissions()).display === 'granted';
+    const plan = ok ? remPlan(R) : [], sig = plan.map(p => p.id + '@' + p.at.getTime() + p.title).join('|');
+    if (sig === remSig) return;
+    const old = ((await LN.getPending()).notifications || []).filter(n => n.id !== REM_TEST_ID).map(n => ({ id: n.id }));
+    if (old.length) await LN.cancel({ notifications: old });
+    if (plan.length){
+      await remChannel(LN);
+      await LN.schedule({ notifications: plan.map(p => ({ id: p.id, title: p.title, body: p.body, channelId: REM_CHANNEL, schedule: { at: p.at, allowWhileIdle: true } })) });
+    }
+    remSig = sig;
+  }catch{}
+  finally{ remBusy = false; if (remAgain){ remAgain = false; remSoon(); } }
 }
 function remCard(){
   const R = store.get('rem', { on:false, lead:0 }), has = 'Notification' in window, perm = has ? Notification.permission : 'unsupported', on = R.on && perm === 'granted';
-  if (IS_NATIVE) return '<h2>Reminders</h2><p class="wn">Reminders are not available in the Android app yet. For now, open Yotei to see what is next.</p>';
+  const leadSel = '<div class="capRow"><label for="remLead">Remind me</label><select id="remLead">' + [[0, 'At start'], [5, '5 min before'], [10, '10 min before']].map(o => '<option value="' + o[0] + '"' + (R.lead === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>';
+  if (IS_NATIVE){
+    const p = remNative.perm, nOn = R.on && p === 'granted';
+    const st = p === 'denied' ? 'Notifications are blocked. Turn them on for Yotei in Android Settings, under Apps, Yotei, Notifications.' : nOn ? 'Reminders are on.' : 'Reminders are off.';
+    const ex = nOn && remNative.exact === 'denied' ? '<p class="wn">For reminders on the exact minute, allow "Alarms &amp; reminders" for Yotei. Without it Android can delay them by a few minutes.</p><div class="ea"><button id="remExact">Allow exact timing</button></div>' : '';
+    return '<h2>Reminders</h2><p class="wn">' + st + '</p><p class="wn">Yotei sets reminders for today and the next two days with your phone\'s alarm system, so they fire even when the app is closed. If some do not show up, allow notifications and unrestricted battery use for Yotei in Android Settings.</p>' + ex + leadSel + '<div class="ea"><button id="remToggle">' + (nOn ? 'Turn off' : 'Turn on') + '</button><button id="remTest">Send test</button></div>';
+  }
   const state = !has ? 'Notifications are not available in this browser. On iPhone, add Yotei to your Home Screen first.' : perm === 'denied' ? 'Notifications are blocked. Allow them for this site in your browser settings.' : on ? 'Reminders are on.' : 'Reminders are off.';
   return '<h2>Reminders</h2><p class="wn">' + state + '</p><p class="wn">They only fire while Yotei is open or running in the background, and phones may pause web apps. Keep Yotei open if timing matters.</p><div class="capRow"><label for="remLead">Remind me</label><select id="remLead">' + [[0, 'At start'], [5, '5 min before'], [10, '10 min before']].map(o => '<option value="' + o[0] + '"' + (R.lead === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div><div class="ea"><button id="remToggle">' + (on ? 'Turn off' : 'Turn on') + '</button><button id="remTest">Send test</button></div>';
 }
@@ -1353,7 +1439,7 @@ async function notify(title, body, tag){
 }
 function remCheck(){
   const R = store.get('rem', { on:false, lead:0 });
-  if (!R.on || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (IS_NATIVE || !R.on || !('Notification' in window) || Notification.permission !== 'granted') return;
   const ds = todayStr(), sv = { wake, day, done };
   let rows = [], dn = [];
   try{ loadDay(ds); rows = build(new Date().getDay()).rows; dn = done.ids.slice(); }
@@ -1370,7 +1456,8 @@ function remCheck(){
   if (ch) store.set('remSent', S);
 }
 setInterval(remCheck, 15000);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') remCheck(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible'){ remCheck(); if (IS_NATIVE){ remNativeState(); remSoon(); } } });
+if (IS_NATIVE){ remNativeState(); remSoon(true); }
 $('#tab-settings').insertAdjacentHTML('beforeend',
   '<div class="sleep" id="remCard">' + remCard() + '</div>' +
   '<div class="sleep"><h2>Routine templates</h2><p class="wn">Start from a ready-made routine, then edit it however you like.</p>' +
@@ -1381,17 +1468,33 @@ $('#tab-settings').addEventListener('click', async e => {
   if (t.id === 'remToggle'){
     const R = store.get('rem', { on:false, lead:0 });
     if (R.on) R.on = false;
+    else if (IS_NATIVE){
+      const LN = nativePlugin('LocalNotifications');
+      try{ let p = await LN.checkPermissions(); if (p.display !== 'granted') p = await LN.requestPermissions(); R.on = p.display === 'granted'; }catch{ R.on = false; }
+    }
     else if ('Notification' in window){ const p = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission(); R.on = p === 'granted'; }
-    store.set('rem', R); $('#remCard').innerHTML = remCard();
+    store.set('rem', R);
+    if (IS_NATIVE){ await remNativeState(); remSoon(true); } else $('#remCard').innerHTML = remCard();
+  }
+  if (t.id === 'remExact'){ try{ await nativePlugin('LocalNotifications').changeExactNotificationSetting(); }catch{} }
+  if (t.id === 'remTest' && IS_NATIVE){
+    const LN = nativePlugin('LocalNotifications'), R = store.get('rem', { on:false, lead:0 });
+    if (!LN || !R.on || remNative.perm !== 'granted'){ tell('Turn on reminders first.'); return; }
+    try{
+      await remChannel(LN);
+      await LN.schedule({ notifications: [{ id:REM_TEST_ID, title:'Yotei', body:'Reminders are working.', channelId:REM_CHANNEL, schedule:{ at:new Date(Date.now() + 3000), allowWhileIdle:true } }] });
+      toast('Test reminder coming in a few seconds.');
+    }catch{ tell('Could not send a test reminder.'); }
+    return;
   }
   if (t.id === 'remTest'){
     if ('Notification' in window && Notification.permission === 'granted') notify('Yotei', 'Reminders are working.', 'test');
-    else alert('Turn on reminders first.');
+    else tell('Turn on reminders first.');
   }
 });
 $('#tab-settings').addEventListener('change', e => {
   if (e.target.id !== 'remLead') return;
-  const R = store.get('rem', { on:false, lead:0 }); R.lead = Number(e.target.value); store.set('rem', R);
+  const R = store.get('rem', { on:false, lead:0 }); R.lead = Number(e.target.value); store.set('rem', R); remSoon(true);
 });
 
 // ============================================================
@@ -1512,7 +1615,7 @@ $('#icsF').addEventListener('change', e => {
   const rd = new FileReader();
   rd.onload = () => {
     const r = importICS(String(rd.result));
-    alert('Imported ' + r.added + ' event' + (r.added === 1 ? '' : 's') + '.' + (r.allDay ? ' Skipped ' + r.allDay + ' all-day.' : '') + (r.out ? ' Skipped ' + r.out + ' outside the date range.' : '') + (r.rec ? ' ' + r.rec + ' recurring (first occurrence only).' : ''));
+    tell('Imported ' + r.added + ' event' + (r.added === 1 ? '' : 's') + '.' + (r.allDay ? ' Skipped ' + r.allDay + ' all-day.' : '') + (r.out ? ' Skipped ' + r.out + ' outside the date range.' : '') + (r.rec ? ' ' + r.rec + ' recurring (first occurrence only).' : ''));
   };
   rd.readAsText(f); e.target.value = '';
 });
@@ -1569,8 +1672,8 @@ function removeFromRoutines(c){
 }
 function rowInfo(id){ const r = schedule().rows.find(x => sameId(x.id, id)); return r ? { t: r.t, w: r.w } : {}; }
 // A past day shows a frozen record of what was there. Deleting from it removes that entry from the record.
-function deleteFromRecord(c){
-  if (!confirm('Remove this task from the record of this day?')) return;
+async function deleteFromRecord(c){
+  if (!await ask('Remove this task from the record of this day?', { ok:'Remove', danger:true })) return;
   const _s = grab(), H = store.get('hist', {}), rec = H[viewDate], next = removeFromRecord(rec, { id: c.id, ...rowInfo(c.id) });
   if (next !== rec){ H[viewDate] = next; store.set('hist', H); }
   render(); showUndo('Task removed', _s);
@@ -1649,9 +1752,9 @@ $('#e_del').onclick = () => {
   if (cur.l === 'oo'){ const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => !sameId(x.id, cur.id))); $('#ed').close(); render(); showUndo('Task deleted', _s); return; }
   askScope(cur.l === 'win' ? 'reset' : 'delete', { l:cur.l, id:cur.id });
 };
-$('#ts_del').onclick = () => {
+$('#ts_del').onclick = async () => {
   if (snapMode()){ $('#taskSheet').close(); deleteFromRecord(sheetCtx); return; }
-  if (sheetCtx.l === 'oo'){ if (!confirm('Delete this task?')) return; const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => !sameId(x.id, sheetCtx.id))); $('#taskSheet').close(); render(); showUndo('Task deleted', _s); return; }
+  if (sheetCtx.l === 'oo'){ if (!await ask('Delete this task?', { ok:'Delete', danger:true })) return; const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => !sameId(x.id, sheetCtx.id))); $('#taskSheet').close(); render(); showUndo('Task deleted', _s); return; }
   $('#taskSheet').close(); askScope('delete', { l:sheetCtx.l, id:sheetCtx.id });
 };
 
@@ -1698,11 +1801,11 @@ function copyDay(src, dst){
   store.set('ovr', OV); store.set('plans', plans);
 }
 $('#ts_move').onclick = () => { $('#taskSheet').close(); openMv('task'); };
-$('#mv_go').onclick = () => {
+$('#mv_go').onclick = async () => {
   if (mvMode === 'task'){ mvDo('move'); return; }
   const ds = mvDate(); if (!ds) return;
-  if (ds === viewDate){ alert('Pick a different day.'); return; }
-  if (plans[ds] && !confirm('That day already has a plan. Replace it?')) return;
+  if (ds === viewDate){ tell('Pick a different day.'); return; }
+  if (plans[ds] && !await ask('That day already has a plan. Replace it?', { ok:'Replace', danger:true })) return;
   const _s = grab(); copyDay(viewDate, ds); $('#mvDlg').close(); goDate(ds); showUndo('Day copied', _s);
 };
 $('#mv_copy').onclick = () => mvDo('copy');
@@ -2035,17 +2138,17 @@ function delHist(ds){
   if (viewDate === ds) loadDay(ds);
   lastSig = ''; render(); showUndo('Record deleted', _s);
 }
-function clearHist(){
-  if (!confirm('Delete the saved records of all past days, including their done marks and task notes? Your routines are kept.')) return;
+async function clearHist(){
+  if (!await ask('Delete the saved records of all past days, including their done marks and task notes? Your routines are kept.', { ok:'Delete', danger:true })) return;
   const _s = grab(), t = todayStr();
   store.set('hist', {});
   Object.keys(plans).forEach(d => { if (d < t) delete plans[d]; }); store.set('plans', plans);
   const tn = store.get('taskNotes', {}); Object.keys(tn).forEach(k => { if (k.split('_')[0] < t) delete tn[k]; }); store.set('taskNotes', tn);
   lastSig = ''; loadDay(viewDate); render(); showUndo('History deleted', _s);
 }
-$('#histbox').addEventListener('click', e => {
+$('#histbox').addEventListener('click', async e => {
   const b = e.target.closest('.hdel'); if (!b) return;
-  if (confirm('Delete the saved record for ' + b.dataset.hd + '? This removes its done marks and task notes.')) delHist(b.dataset.hd);
+  if (await ask('Delete the saved record for ' + b.dataset.hd + '? This removes its done marks and task notes.', { ok:'Delete', danger:true })) delHist(b.dataset.hd);
 });
 $('#tab-settings').insertAdjacentHTML('beforeend', '<div class="sleep"><h2>History data</h2><p class="wn">Delete the saved records of past days, with their done marks and task notes. Your routines stay as they are. You can also delete a single day from the History tab.</p><button class="add" id="clrHist">Delete all recorded history</button></div>');
 $('#clrHist').addEventListener('click', clearHist);
@@ -2101,7 +2204,7 @@ $('#clr_go').onclick = async () => {
 // SAFETY, ACCESSIBILITY, EMPTY STATE
 // ============================================================
 function safeCol(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.trim())) ? c.trim() : null; }
-Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks' })
+Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks', msgDlg:'Message' })
   .forEach(([id, l]) => { const d = document.getElementById(id); if (d) d.setAttribute('aria-label', l); });
 $('#tl').insertAdjacentHTML('beforebegin', '<div class="sleep emptyCard" id="emptyCard" hidden><h2>Start with your first task</h2><p class="wn">Add what you want to do today. A task added for all days repeats every day. You can use the + button any time.</p><button class="add" id="emptyAdd">Add a task</button></div>');
 function drawEmpty(){
@@ -2122,7 +2225,7 @@ function focusNow(){ if (viewDate !== todayStr()) return; const r = document.que
 })();
 const tabs = document.querySelectorAll('.tabs button');
 // ---- Android back button (only wired up inside the Android app) ----
-const BACK_ORDER = ['scopeDlg', 'iconPick', 'colorSheet', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
+const BACK_ORDER = ['msgDlg', 'scopeDlg', 'iconPick', 'colorSheet', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
 function handleBack(){
   for (const id of BACK_ORDER){
     const d = document.getElementById(id);

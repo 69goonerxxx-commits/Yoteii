@@ -10,43 +10,103 @@
 <meta name="apple-mobile-web-app-title" content="Yotei">
 <link rel="manifest" href="./manifest.webmanifest">
 <script>
-/* Startup safety net: if a file fails to load or the app crashes, say so on screen. */
+/* Startup safety net: if a file fails to load or the app crashes, say so in plain words and let the person save their data. */
 (function(){
-  var errs=[];
-  function show(){
-    var b=document.getElementById('yoteiErr');
-    if(!b){
-      b=document.createElement('pre'); b.id='yoteiErr';
-      b.style.cssText='position:fixed;left:0;right:0;bottom:0;max-height:45%;overflow:auto;margin:0;padding:10px 12px;background:#7f1d1d;color:#fff;font:12px/1.4 monospace;white-space:pre-wrap;z-index:2147483647';
-      (document.body||document.documentElement).appendChild(b);
-    }
-    b.textContent='Yotei could not start properly:\n'+errs.join('\n');
+  var errs = [], box, det, msg, FILES = ['main.js','util.js','validate.js','tasks.js','engine.js','dates.js','migrate.js','icons.js','templates.js','science.js','about.js','storage.js','styles.css'], checked = false;
+  function el(t, css, txt){ var e = document.createElement(t); if (css) e.style.cssText = css; if (txt !== undefined) e.textContent = txt; return e; }
+  function btn(txt, fn){
+    var b = el('button', 'font:600 14px/1 system-ui,sans-serif;color:#fff;background:rgba(255,255,255,.16);border:0;border-radius:10px;padding:0 14px;min-height:42px', txt);
+    b.type = 'button'; b.onclick = fn; return b;
   }
-  function add(m){ if(errs.indexOf(m)<0){ errs.push(m); show(); } }
-  window.addEventListener('error',function(e){
-    var t=e.target;
-    if(t&&t!==window&&t.tagName){
-      /* a resource failed to load: only app files (same origin LINK/SCRIPT) matter, not images or CDN fetches */
-      if(t.tagName==='LINK'||t.tagName==='SCRIPT'){
-        var u=t.href||t.src||'';
-        try{ if(new URL(u,location.href).origin===location.origin) add('Could not load '+u.split('/').slice(3).join('/')); }catch(x){}
-      }
-    } else if(e.message) add(e.message+(e.filename?' ('+e.filename.split('/').pop()+':'+e.lineno+')':''));
-  },true);
-  window.addEventListener('unhandledrejection',function(e){ add('Error: '+((e.reason&&e.reason.message)||e.reason)); });
-})();
-</script>
-<script>
-/* Diagnostic: if the red box appears, report which app files are missing or unreadable. */
-window.addEventListener('load',function(){
-  setTimeout(function(){
-    if(!document.getElementById('yoteiErr')) return;
-    ['main.js','util.js','validate.js','tasks.js','engine.js','dates.js','migrate.js','icons.js','templates.js','science.js','about.js','storage.js','styles.css'].forEach(function(f){
-      var say=function(m){var b=document.getElementById('yoteiErr'); if(b) b.textContent+='\nMISSING: '+f+' ('+m+')';};
-      fetch('./'+f,{cache:'no-store'}).then(function(r){ if(!r.ok) say('HTTP '+r.status); }).catch(function(){ say('fetch failed'); });
+  function say(t){ if (msg){ msg.textContent = t; msg.style.display = t ? 'block' : 'none'; } }
+  function build(){
+    box = el('div', 'position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:70%;overflow:auto;box-sizing:border-box;padding:14px;background:#3b1515;color:#fff;border:1px solid #b91c1c;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.5);font:14px/1.45 system-ui,sans-serif;z-index:2147483647');
+    box.id = 'yoteiErr'; box.setAttribute('role', 'alert');
+    var x = btn('\u2715', function(){ box.style.display = 'none'; });
+    x.setAttribute('aria-label', 'Dismiss'); x.style.cssText += ';position:absolute;top:6px;right:6px;min-height:36px;width:36px;padding:0;font-size:16px';
+    box.appendChild(x);
+    box.appendChild(el('div', 'font-weight:700;font-size:16px;margin:0 40px 4px 0', 'Something went wrong'));
+    box.appendChild(el('div', 'opacity:.9;margin-bottom:12px', 'Yotei hit a problem and may not work properly. Your data is safe on this device. Reloading usually fixes it.'));
+    var row = el('div', 'display:flex;flex-wrap:wrap;gap:8px');
+    row.appendChild(btn('Export my data', exportNow));
+    row.appendChild(btn('Reload', function(){ location.reload(); }));
+    row.appendChild(btn('Details', function(){ det.style.display = det.style.display === 'none' ? 'block' : 'none'; }));
+    box.appendChild(row);
+    msg = el('div', 'display:none;margin-top:10px;font-weight:600'); msg.setAttribute('aria-live', 'polite'); box.appendChild(msg);
+    det = el('pre', 'display:none;margin:10px 0 0;padding:10px;background:rgba(0,0,0,.35);border-radius:8px;font:12px/1.4 monospace;white-space:pre-wrap;word-break:break-word;user-select:text;-webkit-user-select:text');
+    box.appendChild(det);
+    (document.body || document.documentElement).appendChild(box);
+  }
+  function show(){
+    if (!box) build();
+    box.style.display = 'block';
+    det.textContent = 'Technical details:\n' + errs.join('\n');
+  }
+  function add(m){ if (errs.indexOf(m) < 0){ errs.push(m); show(); if (/^Could not load /.test(m)) checkFiles(); } }
+  /* a missing file shows up here as a plain list in the details */
+  function checkFiles(){
+    if (checked) return; checked = true;
+    FILES.forEach(function(f){
+      fetch('./' + f, { cache:'no-store' }).then(function(r){ if (!r.ok) add('Missing file: ' + f + ' (HTTP ' + r.status + ')'); }).catch(function(){});
     });
-  },600);
-});
+  }
+  /* Save a backup straight from the stored data, so it works even when the app itself did not start. Same file format as Settings > Export. */
+  function rq(r){ return new Promise(function(res, rej){ r.onsuccess = function(){ res(r.result); }; r.onerror = function(){ rej(r.error); }; }); }
+  async function readAll(){
+    var data = {};
+    try{
+      var db = await new Promise(function(res, rej){
+        var r = indexedDB.open('yotei');
+        r.onupgradeneeded = function(){ r.transaction.abort(); };   /* no database yet: do not create one */
+        r.onsuccess = function(){ res(r.result); }; r.onerror = function(){ rej(r.error); };
+      });
+      if (db.objectStoreNames.contains('kv')){
+        var st = db.transaction('kv', 'readonly').objectStore('kv'), keys = await rq(st.getAllKeys()), vals = await rq(st.getAll());
+        keys.forEach(function(k, i){ if (String(k).indexOf('__') !== 0) data['yotei_v2_' + k] = vals[i]; });
+      }
+      db.close();
+    }catch(e){}
+    if (!Object.keys(data).length){
+      try{ for (var i = 0; i < localStorage.length; i++){ var k = localStorage.key(i); if (k && k.indexOf('yotei_v2_') === 0) data[k] = localStorage.getItem(k); } }catch(e){}
+    }
+    return data;
+  }
+  async function exportNow(){
+    say('');
+    try{
+      var data = await readAll();
+      if (!Object.keys(data).length){ say('There is nothing saved on this device to export.'); return; }
+      var name = 'yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', json = JSON.stringify({ app:'yotei', v:3, data:data });
+      var C = window.Capacitor, P = C && C.isNativePlatform && C.isNativePlatform() && C.Plugins;
+      if (P && P.Filesystem && P.Share){
+        var w = await P.Filesystem.writeFile({ path:name, data:json, directory:'CACHE', encoding:'utf8' });
+        await P.Share.share({ title:'Yotei backup', url:w.uri, dialogTitle:'Save your Yotei backup' });
+        say('Backup ready. Choose where to save it.'); return;
+      }
+      var f = new File([json], name, { type:'application/json' });
+      if (navigator.canShare && navigator.canShare({ files:[f] })){
+        try{ await navigator.share({ files:[f], title:'Yotei backup' }); say('Backup shared.'); return; }
+        catch(e){ if (e && e.name === 'AbortError') return; }
+      }
+      var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type:'application/json' })); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+      say('Backup downloaded.');
+    }catch(e){
+      if (!/cancel/i.test(String((e && e.message) || e))) say('Could not save the backup. Try again, or reload and use Settings, then Export.');
+    }
+  }
+  window.addEventListener('error', function(e){
+    var t = e.target;
+    if (t && t !== window && t.tagName){
+      /* a resource failed to load: only app files (same origin LINK/SCRIPT) matter, not images or CDN fetches */
+      if (t.tagName === 'LINK' || t.tagName === 'SCRIPT'){
+        var u = t.href || t.src || '';
+        try{ if (new URL(u, location.href).origin === location.origin) add('Could not load ' + u.split('/').slice(3).join('/')); }catch(x){}
+      }
+    } else if (e.message && !/ResizeObserver loop/.test(e.message)) add(e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){ add('Error: ' + ((e.reason && e.reason.message) || e.reason)); });
+})();
 </script>
 <script>try{var D=document.documentElement,T=JSON.parse(localStorage.getItem('yotei_v2_theme')||'"dark"');if(T==='auto')T=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';D.dataset.theme=T;D.dataset.text=JSON.parse(localStorage.getItem('yotei_v2_text')||'"normal"')}catch(e){}</script>
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
@@ -180,6 +240,11 @@ window.addEventListener('load',function(){
   <p class="wn">Automatic copies of your data, kept once a day and before every import. The last 7 are kept on this device.</p>
   <div id="snapList"></div>
   <div class="ea"><button id="snap_x">Close</button></div>
+</div></dialog>
+<dialog id="msgDlg"><div class="ef">
+  <h2 id="md_title" hidden></h2>
+  <p class="wn" id="md_text" style="white-space:pre-line"></p>
+  <div class="ea"><button id="md_no">Cancel</button><button id="md_ok">OK</button></div>
 </div></dialog>
 <dialog id="clrDlg"><div class="ef">
   <h2>Clear all data?</h2>

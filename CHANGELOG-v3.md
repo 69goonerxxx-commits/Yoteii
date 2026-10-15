@@ -1,6 +1,15 @@
-# Yotei v3.0.1 (3.0.0 notes below)
+# Yotei v3.0.2 (3.0.0 notes below)
 
 Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 entry in `about.js`.
+
+## 3.0.2
+- Android reminders: scheduled with the phone (Capacitor Local Notifications) for today and the next two days, replanned whenever the screen changes or the app is opened. They fire with the app closed and are restored after a restart. Permission prompt, exact-timing setting and a test button are in Settings.
+- In-app dialogs: all 20 browser confirm() and alert() popups are replaced by ask() and tell() in main.js and a msgDlg in index.html. Destructive buttons are red, Cancel is focused on questions, Esc and the Android back button count as Cancel. tests/flows.py accepts the new dialog automatically.
+- Startup error panel: plain "Something went wrong" message with Export my data, Reload, Details and a dismiss button, replacing the red technical box. Export reads the saved data directly, so it works even if main.js never started, and uses the same file format and share sheet as Settings > Export. A missing app file is named in Details.
+- Poppins bundled into styles.css (latin, weights 400 to 700). No Google Fonts request.
+- Wording: "on this device" in the app, "in this browser" on the web.
+- The Buffer time task is gone. Spare time before a departure is free time, and the message says so.
+- New test (html-ids) fails if main.js asks for an element index.html does not have.
 
 ## 3.0.1
 - Saves now start straight away. A change made in the last instant before the app closed or reloaded could be lost (measured: 60 of 60 in the worst case, now 0 of 60).
@@ -42,6 +51,3 @@ Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 
 - Icon picking: a cloud icon that is still downloading can no longer land on a different task later. The tile shows a loading state, gives up after 8 seconds with a message, and works out when offline.
 - Toasts: wider, centered, above the round + button. They can no longer stay on screen (timestamp safety net), and tapping one dismisses it. Moving to another screen clears an older one.
 - Delete always works: tasks with no id, a number as an id or a duplicate id are repaired at startup, a task filed in the wrong list is found, and deleting one that no longer exists just completes. On a past day, deleting removes the task from that day's saved record (with Undo). The "no longer in your routines" message now offers "Delete it".
-
-## Still planned
-- Android app build with native reminders.

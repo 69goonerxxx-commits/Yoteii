@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.0.1';
+export const APP_VERSION = '3.0.2';
 export const FEATURES = [
   'A daily timeline built from your wake time, split into seven energy windows',
   'Morning and Night Routines that shrink (optional, then flexible, then core) to fit',
@@ -21,11 +21,21 @@ export const FEATURES = [
 export const LIMITS = [
   'Your data lives on this device only (daily snapshots are kept here too), so export a backup now and then',
   'Past days are rebuilt from your current task list, so they can differ from how that day originally looked',
-  'Reminders only fire while Yotei is open or running in the background',
-  'Calendar import is a one-time copy of timed events, not a live sync',
-  'Fonts need one online load before they work offline'
+  'In a browser, reminders only fire while Yotei is open or running in the background. In the Android app they are scheduled with the phone for today and the next two days',
+  'Calendar import is a one-time copy of timed events, not a live sync'
 ];
 export const CHANGELOG = [
+  { v:'3.0.2', date:'Oct 2026',
+    added:[
+      'Android app: real reminders. They are scheduled with the phone for today and the next two days, fire when the app is closed, and survive a restart. Choose at start, 5 or 10 minutes before',
+      'Poppins is now built in, so the app looks the same offline and no longer contacts Google Fonts'],
+    changed:[
+      'Questions and messages (delete, replace, import, reset and so on) now appear in Yotei\'s own dialogs instead of the browser popups. Delete and replace buttons are red, Cancel is highlighted for questions, and the Android back button or Esc cancels',
+      'If Yotei crashes or a file fails to load, a short message now appears instead of the red technical box. Export my data saves a backup even when the app did not start, Reload tries again, and Details shows the technical text',
+      'In the app, messages say "on this device" instead of "in this browser"',
+      'Spare time before a school departure now shows as free time, with the message "15 min free before you leave", instead of a Buffer time task you could not delete'],
+    fixed:[
+      'The app could fail to start when index.html was older than the code. A test now checks they match'] },
   { v:'3.0.1', date:'Oct 2026',
     added:[
       'Ready for the Android app: backups use the Android share sheet, the back button closes whatever is open and then returns to the timeline, and screens respect the status and navigation bars'],
