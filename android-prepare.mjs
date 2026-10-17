@@ -45,6 +45,97 @@ writeFileSync(`${APP}/res/mipmap-anydpi-v26/ic_launcher_round.xml`, adaptive);
 writeFileSync(`${APP}/res/values/ic_launcher_background.xml`, '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0A1226</color>\n</resources>\n');
 console.log('launcher icons written');
 
+// ---- native helper: save the backup straight into Downloads ----
+// (a web page inside the app cannot download files, so Export asks this small plugin to write into the Downloads folder.
+//  If anything here looks different from what is expected we skip it, and the app falls back to the share sheet.)
+{
+  const appId = JSON.parse(readFileSync('capacitor.config.json', 'utf8')).appId || 'app.yotei';
+  const dir = `${APP}/java/${appId.replace(/\./g, '/')}`, mainFile = `${dir}/MainActivity.java`;
+  if (!existsSync(mainFile)) warn('MainActivity.java not found, so Export will use the share sheet');
+  else {
+    const main = readFileSync(mainFile, 'utf8');
+    if (!/extends\s+BridgeActivity/.test(main)) warn('MainActivity.java looks different from expected, so Export will use the share sheet');
+    else {
+      writeFileSync(`${dir}/YoteiFilesPlugin.java`, `package ${appId};
+
+import android.annotation.TargetApi;
+import android.content.ContentValues;
+import android.content.Context;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
+@CapacitorPlugin(name = "YoteiFiles")
+public class YoteiFilesPlugin extends Plugin {
+    @TargetApi(Build.VERSION_CODES.Q)
+    @PluginMethod
+    public void saveToDownloads(PluginCall call) {
+        String name = call.getString("name");
+        String data = call.getString("data");
+        String mime = call.getString("mime", "application/octet-stream");
+        if (name == null || data == null) {
+            call.reject("Missing name or data");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            call.reject("Needs Android 10 or newer");
+            return;
+        }
+        try {
+            Context ctx = getContext();
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            Uri uri = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) {
+                call.reject("Could not create the file");
+                return;
+            }
+            try (OutputStream out = ctx.getContentResolver().openOutputStream(uri)) {
+                if (out == null) {
+                    call.reject("Could not open the file");
+                    return;
+                }
+                out.write(data.getBytes(StandardCharsets.UTF_8));
+            }
+            JSObject ret = new JSObject();
+            ret.put("uri", uri.toString());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not save: " + e.getMessage());
+        }
+    }
+}
+`);
+      if (!/registerPlugin\(\s*YoteiFilesPlugin/.test(main)) {
+        writeFileSync(mainFile, `package ${appId};
+
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(YoteiFilesPlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+}
+`);
+      }
+      console.log('Downloads helper added');
+    }
+  }
+}
+
 // ---- small icon for reminder notifications: Android wants a white shape on a transparent background ----
 {
   const glyph = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';

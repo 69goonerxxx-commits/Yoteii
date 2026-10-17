@@ -9,6 +9,17 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Yotei">
 <link rel="manifest" href="./manifest.webmanifest">
+<style>
+/* Loading screen: the five dots from the app icon, rippling */
+#boot{position:fixed;inset:0;z-index:2147483000;background:#0a1226;display:flex;align-items:center;justify-content:center;transition:opacity .35s ease}
+#boot.out{opacity:0;pointer-events:none}
+#boot svg{width:min(52vw,220px);height:auto;overflow:visible}
+#boot .bd{transform-box:fill-box;transform-origin:center;animation:bootDot 1.3s ease-in-out infinite}
+#boot .d2{animation-delay:.14s}#boot .d3{animation-delay:.28s}#boot .d4{animation-delay:.42s}#boot .d5{animation-delay:.56s}
+@keyframes bootDot{0%,70%,100%{transform:scale(1);opacity:.45}35%{transform:scale(1.75);opacity:1}}
+@media (prefers-reduced-motion:reduce){#boot .bd{animation:none;opacity:1}}
+</style>
+<script>window.__t0=Date.now();window.__bootMin=0;window.__bootOff=function(now){var b=document.getElementById('boot');if(!b)return;var go=function(){b.classList.add('out');setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b);var f=window.__afterBoot;window.__afterBoot=null;if(f)f()},400)};if(now)go();else setTimeout(go,Math.max(0,window.__bootMin-(Date.now()-window.__t0)))};setTimeout(function(){window.__bootOff(true)},9000);</script>
 <script>
 /* Startup safety net: if a file fails to load or the app crashes, say so in plain words and let the person save their data. */
 (function(){
@@ -38,6 +49,7 @@
     (document.body || document.documentElement).appendChild(box);
   }
   function show(){
+    if (window.__bootOff) window.__bootOff(true);
     if (!box) build();
     box.style.display = 'block';
     det.textContent = 'Technical details:\n' + errs.join('\n');
@@ -114,8 +126,9 @@
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+<div id="boot" role="status" aria-label="Loading Yotei"><svg viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="220" r="118" fill="none" stroke="#1d4ed8" stroke-width="16" opacity="0.6"/><circle cx="256" cy="220" r="118" fill="none" stroke="#60a5fa" stroke-width="3" opacity="0.4"/><polyline points="194,222 240,268 320,176" fill="none" stroke="#60a5fa" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/><circle class="bd d1" cx="166" cy="400" r="14" fill="#1d4ed8"/><circle class="bd d2" cx="210" cy="400" r="14" fill="#1d4ed8"/><circle class="bd d3" cx="256" cy="400" r="14" fill="#3b82f6"/><circle class="bd d4" cx="302" cy="400" r="14" fill="#3b82f6"/><circle class="bd d5" cx="346" cy="400" r="14" fill="#60a5fa"/></svg></div>
 <div class="app">
-  <div class="top"><h1 id="hdrTitle">Yotei</h1><div class="hdrR"><div class="dateWrap hdrCal"><button class="date" id="dateBtn" aria-label="Pick a date"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></button><input type="date" id="datePick" aria-label="Pick a date" tabindex="-1"></div></div><span id="date" class="srOnly"></span><span id="clk"></span><button id="settingsBtn" aria-label="Settings">⚙</button></div>
+  <div class="top"><h1 id="hdrTitle">Yotei</h1><div class="hdrR"><div class="dateWrap hdrCal"><button class="date" id="dateBtn" aria-label="Pick a date"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></button><input type="date" id="datePick" aria-label="Pick a date" tabindex="-1"></div></div><span id="date" class="srOnly"></span><span id="clk"></span><button id="editDone" type="button" aria-label="Done editing">Done</button><button id="settingsBtn" aria-label="Settings">⚙</button></div>
   <section id="tab-inbox" class="tab" hidden></section>
   <section id="tab-home" class="tab">
     <div class="weekstrip" id="weekstrip"></div>
@@ -219,6 +232,12 @@
   <div class="days" id="sc_days"></div>
   <div class="chips" id="sc_modes"></div>
   <div class="scOpts" id="sc_opts"></div>
+  <div class="scRange" id="sc_range">
+    <p class="scLbl"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg><span>Or choose dates</span></p>
+    <div class="er"><label>Starts<input type="date" id="sc_from"></label><label>Ends<input type="date" id="sc_to"></label></div>
+    <p class="wn">Leave Ends empty to keep going. Any weekdays you picked above still apply.</p>
+    <button type="button" id="sc_range_ok">Use these dates</button>
+  </div>
   <div class="ea"><button id="sc_x">Cancel</button></div>
 </div></dialog>
 <dialog id="mvDlg"><div class="ef">

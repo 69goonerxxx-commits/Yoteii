@@ -26,6 +26,17 @@ export const LIMITS = [
 ];
 export const CHANGELOG = [
   { v:'3.0.3', date:'Oct 2026',
+    added:[
+      'Loading screen: the five dots from the app icon ripple while Yotei starts (at least 2 seconds in the Android app)',
+      'Choose dates for a task: when you add or change a task, pick a start and an end date under "Or choose dates". Weekdays you picked still apply',
+      'Done button in the header while editing is on, so you can leave editing mode without going to Settings',
+      'Energy buttons now have a colour per level (red for drained to green for great), a label, and today\'s rating is filled in'],
+    changed:[
+      'Settings is now a short menu in three groups (General, Data, About). Tap a row to open its page, and the back arrow or Android back button returns to the menu',
+      'Inbox has a cleaner look: an empty-state screen with a New Inbox Task button, and a card for each task once you have some',
+      'The app always opens on the Timeline',
+      'Android app: Export saves the backup straight into your Downloads folder. Share still opens the share sheet',
+      'The rounded corner under the header is softer'],
     fixed:[
       'Android app: the extra empty space above the header (it vanished when you scrolled) is gone. The status bar space was being added twice',
       'Typing in the day note or any field: the tab bar, + button and week strip step aside while the keyboard is open, and the field scrolls into view instead of hiding under the header'] },

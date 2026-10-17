@@ -28,7 +28,7 @@ export function buildSchedule(ctx){
   const { dow, wake, day, CAP, MODES, WIN, OV, getBlocks, wins, fmt } = ctx;
   const typeOf = k => typeOfIn(day.types, k, WIN);
   const m1 = typeOf('climb1'), M = MODES[m1 || 'none'], iso = day.date, dm = m1 || Object.values(day.types || {})[0] || null;
-  const eff = b => applyOvr(b, OV, iso, dow, dm), onDay = b => (!b.days || b.days.includes(dow)) && (!b.from || iso >= b.from) && (!b.modes || (dm && b.modes.includes(dm)));
+  const eff = b => applyOvr(b, OV, iso, dow, dm), onDay = b => (!b.days || b.days.includes(dow)) && (!b.from || iso >= b.from) && (!b.to || iso <= b.to) && (!b.modes || (dm && b.modes.includes(dm)));
   const ooF = k => (day.oneoffs || []).filter(x => (x.w || 'climb1') === k).map(x => ({ ...x, md:'oo', post:true }));
   const fixSort = arr => { const ix = [], fx = []; arr.forEach((b, i) => { if ((b.fixed !== undefined || b.at !== undefined) && !b.sug){ ix.push(i); fx.push(b); } }); fx.sort((a, b) => (a.fixed !== undefined ? a.fixed : a.at) - (b.fixed !== undefined ? b.fixed : b.at)); const out = arr.slice(); ix.forEach((i, j) => { out[i] = fx[j]; }); return out; };
   const pre = fixSort(getBlocks('pre').map(eff).filter(Boolean).filter(onDay).concat(ooF('sleep'))).map(b => ({ ...b, use:b.d }));

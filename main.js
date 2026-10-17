@@ -774,9 +774,11 @@ $('#e_ok').onclick = () => {
 };
 $('#e_x2').onclick = () => $('#e_x').click();
 $('#settingsBtn').addEventListener('click', () => setTab('settings'));
+$('#editDone').addEventListener('click', () => $('#editToggle').click());   // quick way out of editing mode
 $('#editToggle').addEventListener('click', () => {
   editing = !editing;
   $('#settingsBtn').classList.toggle('on', editing);
+  document.body.classList.toggle('editing', editing);
   $('#editToggle').textContent = editing ? 'Turn off editing' : 'Turn on editing';
   if (editing) setTab('home');
   render();
@@ -1102,8 +1104,9 @@ $('#msgDlg').addEventListener('close', () => { const r = mdResolve; mdResolve = 
 // ============================================================
 // Backup files keep the v2 layout (keys carry the yotei_v2_ prefix), so they stay readable by older versions.
 function backupData(){ const o = {}; Object.entries(store.dump()).forEach(([k, v]) => { o['yotei_v2_' + k] = v; }); return o; }
-// In the Android app a page cannot download a file, so the backup is written to a temporary file and handed to Android's share sheet.
-async function saveBackupNative(name, json){
+// In the Android app a page cannot download a file by itself. Export saves straight into the Downloads folder through a small piece of
+// native code (YoteiFiles). Share keeps using Android's share sheet. If the native part is missing, Export falls back to the share sheet.
+async function shareBackupNative(name, json){
   const fs = nativePlugin('Filesystem'), sh = nativePlugin('Share'); if (!fs || !sh) return false;
   try{
     const r = await fs.writeFile({ path:name, data:json, directory:'CACHE', encoding:'utf8' });
@@ -1111,6 +1114,14 @@ async function saveBackupNative(name, json){
     store.set('lastBackup', Date.now()); updateBackupInfo();
   }catch(e){ if (!/cancel/i.test(String((e && e.message) || e))) tell('Could not save the backup. Please try again.'); }
   return true;
+}
+async function saveBackupNative(name, json){
+  const yf = nativePlugin('YoteiFiles');
+  if (yf){
+    try{ await yf.saveToDownloads({ name, data:json, mime:'application/json' }); store.set('lastBackup', Date.now()); updateBackupInfo(); toast('Saved to your Downloads folder'); return true; }
+    catch(e){ /* fall through to the share sheet */ }
+  }
+  return shareBackupNative(name, json);
 }
 async function exportData(){
   if (await saveBackupNative('yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify({ app:'yotei', v:3, data:backupData() }))) return;
@@ -1528,22 +1539,30 @@ function defaultWin(){
   for (const k of Object.keys(WB)) if (n >= WB[k].from && n < WB[k].to) return k;
   return 'climb1';
 }
-$('#dnote').parentElement.insertAdjacentHTML('beforebegin', '<div class="sleep inbox" id="inboxCard"></div>');
+$('#dnote').parentElement.insertAdjacentHTML('beforebegin', '<div class="inbox" id="inboxCard"></div>');
 $('#tab-inbox').appendChild($('#inboxCard'));
+const IN_PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="M12 7.5v9M7.5 12h9" stroke="var(--bg)"/></svg>';
+const IN_TRAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="currentColor" stroke="none" opacity=".25"/><path d="M4 13h4.5l1.2 2.2h4.6L15.5 13H20M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></svg>';
+var inOpen = false;      // the "New Inbox Task" box is showing
 function drawInbox(){
   const el = $('#inboxCard'); if (!el) return;
   const keep = $('#inT') ? $('#inT').value : '', list = store.get('inbox', []);
-  el.innerHTML = '<h2>Inbox</h2><p class="wn">Capture a task now. Schedule it when you know when.</p><div class="inRow"><input id="inT" placeholder="Add a task" maxlength="80" aria-label="New inbox task"><button id="inAdd">Add</button></div>' +
-    list.map(x => '<div class="inItem"><span>' + esc(x.t) + '</span><span class="inAct"><button data-sch="' + x.id + '">Schedule</button><button data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></span></div>').join('') +
-    '';
+  const btn = '<button class="inNew" id="inNew"' + (inOpen ? ' hidden' : '') + '>' + IN_PLUS + '<span>New Inbox Task</span></button>';
+  const comp = '<div class="inRow" id="inComposer"' + (inOpen ? '' : ' hidden') + '><input id="inT" placeholder="Add a task" maxlength="80" aria-label="New inbox task"><button id="inAdd">Add</button></div>';
+  const items = list.map(x => '<div class="inItem"><span>' + esc(x.t) + '</span><span class="inAct"><button data-sch="' + x.id + '">Schedule</button><button data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></span></div>').join('');
+  el.innerHTML = list.length
+    ? btn + comp + '<div class="inList">' + items + '</div>'
+    : '<div class="inEmpty"><div class="inIcon">' + IN_TRAY + '</div><h2>Your unscheduled thoughts</h2><p class="wn">Capture a task now. Schedule it when you know when.</p>' + btn + comp + '</div>';
   $('#inT').value = keep;
 }
+function openInboxComposer(){ setTab('inbox'); inOpen = true; drawInbox(); setTimeout(() => $('#inT') && $('#inT').focus(), 60); }
 $('#inboxCard').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'inNew'){ openInboxComposer(); return; }
   if (b.id === 'inAdd'){
     const v = $('#inT').value.trim(); if (!v) return;
     const l = store.get('inbox', []); l.push({ id:'i' + Date.now().toString(36), t:v }); store.set('inbox', l);
-    $('#inT').value = ''; drawInbox();
+    $('#inT').value = ''; drawInbox(); $('#inT').focus();
   } else if (b.dataset.rm){ const _s = grab(); store.set('inbox', store.get('inbox', []).filter(x => x.id !== b.dataset.rm)); drawInbox(); showUndo('Removed from inbox', _s); }
   else if (b.dataset.sch){
     const it = store.get('inbox', []).find(x => x.id === b.dataset.sch);
@@ -1552,6 +1571,7 @@ $('#inboxCard').addEventListener('click', e => {
   else if (b.id === 'cpDay') openMv('day');
   else if (b.id === 'lateBtn') openShift();
 });
+$('#inboxCard').addEventListener('focusout', e => { if (e.target.id === 'inT' && !e.target.value.trim()) setTimeout(() => { if (inOpen && document.activeElement !== $('#inT') && !$('#inT').value.trim()){ inOpen = false; drawInbox(); } }, 150); });
 $('#inboxCard').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'inT'){ e.preventDefault(); $('#inAdd').click(); } });
 
 function energyHtml(H){
@@ -1662,7 +1682,7 @@ function diffBlock(o, n){
   });
   return p;
 }
-let scopeCtx = null, scDays = [], scModes = [];
+let scopeCtx = null, scDays = [], scModes = [], scFrom = '', scTo = '';
 function drawScChips(){
   $('#sc_days').innerHTML = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((n, i) => '<button type="button" data-i="' + i + '"' + (scDays.includes(i) ? ' class="on"' : '') + '>' + n + '</button>').join('');
   $('#sc_modes').innerHTML = ['home', 'school', 'away'].map(m => '<button type="button" data-m="' + m + '"' + (scModes.includes(m) ? ' class="on"' : '') + '>' + MODE_LABEL[m] + ' days</button>').join('');
@@ -1673,6 +1693,8 @@ function askScope(type, ctx){
   $('#sc_h').textContent = type === 'reset' ? 'Reset this block for' : type === 'delete' ? 'Delete this task for' : type === 'add' ? 'Add this task to' : 'Apply this change to';
   $('#sc_opts').innerHTML = [['day', 'Only this day (' + when + ')'], ['from', 'This day and the days after'], ['all', 'All days']].map(a => '<button data-sc="' + a[0] + '">' + a[1] + '</button>').join('');
   $('#sc_modes').style.display = (ctx.l === 'pre' || ctx.l === 'night') ? '' : 'none';
+  $('#sc_range').style.display = (type === 'reset' || ctx.l === 'win') ? 'none' : '';       // dates are for tasks
+  $('#sc_from').value = viewDate; $('#sc_to').value = '';
   { const tn = $('#sc_typesNote'), ts = ctx.types && type !== 'delete' ? ctx.types : null; tn.style.display = ts ? '' : 'none'; if (ts) tn.textContent = 'Day types: ' + ts.map(m => MODE_LABEL[m]).join(', ') + '. This applies to the options below, except "Only this day".'; }
   drawScChips(); $('#scopeDlg').showModal();
 }
@@ -1706,7 +1728,8 @@ function applyScope0(sc){
   if (scDays.length) filt.days = scDays.slice().sort();
   if (scModes.length && (c.l === 'pre' || c.l === 'night')) filt.modes = scModes.slice();
   const hasFilt = !!(filt.days || filt.modes), push = (id, e) => { (OV[id] = OV[id] || []).push(e); };
-  const range_ = { from:sc === 'all' ? null : iso, to:sc === 'day' ? iso : null };
+  const range_ = sc === 'range' ? { from:scFrom || null, to:scTo || null } : { from:sc === 'all' ? null : iso, to:sc === 'day' ? iso : null };
+  const stamp = o => { if (sc === 'from') o.from = iso; else if (sc === 'range'){ if (scFrom) o.from = scFrom; if (scTo) o.to = scTo; } return o; };   // the dates a new task carries
   if (c.type === 'add'){
     if (sc === 'day'){
       const o = { ...c.b, w:c.w || (c.l === 'pre' ? 'sleep' : c.l === 'night' ? 'wind' : 'climb1') };
@@ -1715,7 +1738,7 @@ function applyScope0(sc){
     } else {
       const types = (c.types && c.types.length) ? c.types : [c.l], lk = types.length > 1 ? (c.b.lk || 'k' + c.id) : c.b.lk;
       types.forEach((tp, i) => {
-        const b = { ...c.b, ...filt }; if (sc === 'from') b.from = iso; if (lk) b.lk = lk; if (i > 0) b.id = newTaskId(i);
+        const b = stamp({ ...c.b, ...filt }); if (lk) b.lk = lk; if (i > 0) b.id = newTaskId(i);
         const a = tp === c.l ? arr : clone(getBlocks(tp)); a.push(b); setBlocks(tp, a);
       });
       if (c.l !== 'pre' && c.l !== 'night' && c.w && !typeOf(c.w) && types.includes(c.l)){ day.types[c.w] = c.l; saveDay(); }
@@ -1751,7 +1774,7 @@ function applyScope0(sc){
         else push(id, { ...range_, ...filt, patch:null });
       });
       toAdd.forEach((L, i) => {                                // newly ticked types: add a copy
-        const cp = { ...c.b, ...filt, id: newTaskId(i + 1), lk }; if (sc === 'from') cp.from = iso;
+        const cp = stamp({ ...c.b, ...filt, id: newTaskId(i + 1), lk });
         const a = clone(getBlocks(L)); a.push(cp); setBlocks(L, a);
       });
     }
@@ -1761,6 +1784,12 @@ function applyScope0(sc){
 $('#sc_days').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const i = Number(b.dataset.i); scDays = scDays.includes(i) ? scDays.filter(x => x !== i) : scDays.concat(i); drawScChips(); });
 $('#sc_modes').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const m = b.dataset.m; scModes = scModes.includes(m) ? scModes.filter(x => x !== m) : scModes.concat(m); drawScChips(); });
 $('#sc_opts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyScope(b.dataset.sc); });
+$('#sc_range_ok').onclick = () => {
+  const f = $('#sc_from').value, t = $('#sc_to').value;
+  if (!f && !t){ tell('Pick a start date, an end date, or both.'); return; }
+  if (f && t && t < f){ tell('The end date is before the start date.'); return; }
+  scFrom = f; scTo = t; applyScope('range');
+};
 $('#sc_x').onclick = () => $('#scopeDlg').close();
 $('#e_del').onclick = () => {
   if (cur.l === 'oo'){ const _s = grab(); needLive(); setBlocks('oo', clone(getBlocks('oo')).filter(x => !sameId(x.id, cur.id))); $('#ed').close(); render(); showUndo('Task deleted', _s); return; }
@@ -1884,12 +1913,16 @@ $('#usualGrid').addEventListener('click', e => {
 });
 
 $('#dnote').parentElement.insertAdjacentHTML('beforebegin', '<div class="sleep" id="energyCard"></div>');
+const EN_NAMES = ['Drained', 'Low', 'Okay', 'Good', 'Great'], EN_COL = ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e'];
 function drawEnergy(){
   const el = $('#energyCard'); if (!el) return;
   if (viewDate !== todayStr() || snapMode()){ el.style.display = 'none'; return; }
   el.style.display = '';
-  const L = store.get('energy', []), last = L[L.length - 1], names = ['Drained', 'Low', 'Okay', 'Good', 'Great'];
-  el.innerHTML = '<h2>How is your energy?</h2><div class="enRow">' + names.map((n, i) => '<button data-en="' + (i + 1) + '" aria-label="' + (i + 1) + ', ' + n + '">' + (i + 1) + '</button>').join('') + '</div><p class="wn">1 is drained, 5 is great. ' + (last ? 'Last: ' + last.v + ' at ' + fmt(last.at).join(' ') + '.' : 'A few ratings a day teach Yotei your rhythm.') + '</p>';
+  const T = store.get('energy', []).filter(x => x.d === todayStr()), last = T[T.length - 1];
+  const btn = (n, i) => '<button data-en="' + (i + 1) + '" class="' + (last && last.v === i + 1 ? 'on' : '') + '" style="--ec:' + EN_COL[i] + ';--ecb:' + EN_COL[i] + '24" aria-pressed="' + !!(last && last.v === i + 1) + '" aria-label="' + (i + 1) + ', ' + n + '"><span class="enN">' + (i + 1) + '</span><span class="enL">' + n + '</span></button>';
+  el.innerHTML = '<h2>How is your energy?</h2><div class="enRow' + (last ? ' has' : '') + '">' + EN_NAMES.map(btn).join('') + '</div>' +
+    (last ? '<p class="wn enNow"><i style="background:' + EN_COL[last.v - 1] + '"></i><b>' + EN_NAMES[last.v - 1] + '</b> at ' + fmt(last.at).join(' ') + '. Tap another to update.</p>'
+          : '<p class="wn">Tap how you feel right now. A few ratings a day teach Yotei your rhythm.</p>');
 }
 $('#energyCard').addEventListener('click', e => {
   const b = e.target.closest('[data-en]'); if (!b) return;
@@ -1963,7 +1996,7 @@ function backupJson(){
   return JSON.stringify({ app:'yotei', v:3, data:backupData() });
 }
 async function shareBackup(){
-  if (IS_NATIVE && await saveBackupNative('yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', backupJson())) return;
+  if (IS_NATIVE && await shareBackupNative('yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', backupJson())) return;
   const f = new File([backupJson()], 'yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', { type:'application/json' });
   if (navigator.canShare && navigator.canShare({ files:[f] })){
     try{ await navigator.share({ files:[f], title:'Yotei backup' }); store.set('lastBackup', Date.now()); updateBackupInfo(); return; }
@@ -2199,7 +2232,7 @@ $('#fabMenu').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   $('#fabMenu').close();
   if (b.dataset.a === 'add'){ openEd('oo', null, defaultWin()); cur.addScope = true; drawEdTypes(); }
-  else if (b.dataset.a === 'inbox'){ setTab('inbox'); setTimeout(() => $('#inT') && $('#inT').focus(), 60); }
+  else if (b.dataset.a === 'inbox') openInboxComposer();
   else if (b.dataset.a === 'late') openShift();
   else openMv('day');
 });
@@ -2248,6 +2281,7 @@ function handleBack(){
     if (x) x.click(); else d.close();
     return true;
   }
+  if (document.body.dataset.tab === 'settings' && document.body.dataset.setpage){ setPageOpen(null); return true; }   // inside a settings page: back to the menu
   if (document.body.dataset.tab !== 'home'){ setTab('home'); return true; }
   return false;
 }
@@ -2257,9 +2291,10 @@ function setTab(t){
   tabs.forEach(b => { b.classList.toggle('on', b.dataset.tab === t); b.setAttribute('aria-selected', b.dataset.tab === t); b.setAttribute('aria-controls', 'tab-' + b.dataset.tab); });
   document.querySelectorAll('.tab').forEach(sec => { sec.hidden = sec.id !== 'tab-' + t; sec.setAttribute('role', 'tabpanel'); });
   store.set('tab', t); document.body.dataset.tab = t; drawHdr();
+  if (t === 'settings') setPageOpen(null);      // tapping Settings always shows the menu
 }
 tabs.forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
-setTab(store.get('tab', 'home'));
+setTab('home');          // always start on the Timeline
 const FRESH = ['hist', 'plans', 'blocks', 'day', 'wake', 'setup'].every(k => store.get(k, null) === null);
 migrateFields();
 migrateV2();
@@ -2267,13 +2302,14 @@ migrateV3();
 // Older versions could leave tasks with no id, a number for an id, or two tasks in a list with the same id.
 { const b = store.get('blocks', null); if (b){ const r = normalizeIds(b); if (r.changed) store.set('blocks', r.blocks); } }
 render();
-if (FRESH) openSetup();
+// a dialog opens above everything, so the Welcome dialog waits until the loading screen has gone
+if (FRESH){ if (document.getElementById('boot')) window.__afterBoot = openSetup; else openSetup(); }
 setTimeout(focusNow, 150);
 (function(){
   const a = new URLSearchParams(location.search).get('action'); if (!a) return;
   try{ history.replaceState(null, '', location.pathname); }catch{}
   setTab('home'); goDate(todayStr());
-  if (a === 'morning') runStart('sleep'); else if (a === 'inbox'){ setTab('inbox'); setTimeout(() => $('#inT') && $('#inT').focus(), 60); }
+  if (a === 'morning') runStart('sleep'); else if (a === 'inbox') openInboxComposer();
 })();
 function migrateV2(){
   if (store.get('schemaV', 0) >= 2) return;
@@ -2316,3 +2352,81 @@ if ('serviceWorker' in navigator && !IS_NATIVE){
   const registerSw = () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); };
   if (document.readyState === 'complete') registerSw(); else window.addEventListener('load', registerSw);
 }
+// ============================================================
+// SETTINGS MENU: grouped rows that each open their own page. The cards themselves are moved, not rebuilt, so every control keeps working.
+// ============================================================
+const SI = {
+  bell:'<path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4L6 17zM10 20a2 2 0 0 0 4 0"/>',
+  palette:'<path d="M12 4a8 8 0 1 0 0 16c1.2 0 1.8-.8 1.5-1.8-.3-1 .3-2.2 1.5-2.2h1.5a3 3 0 0 0 3-3A8 8 0 0 0 12 4z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="11" r="1"/>',
+  sliders:'<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+  pencil:'<path d="M4 20l1-4L16 5l3 3L8 19l-4 1zM14 7l3 3"/>',
+  save:'<path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14"/>',
+  cal:'<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  reset:'<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>',
+  flask:'<path d="M9 4h6M10 4v6l-5 9a1 1 0 0 0 1 1.5h12a1 1 0 0 0 1-1.5l-5-9V4"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  chev:'<path d="M9 6l6 6-6 6"/>', back:'<path d="M15 6l-6 6 6 6"/>'
+};
+const sIcon = (k, extra = '') => '<svg viewBox="0 0 24 24" aria-hidden="true"' + extra + '>' + SI[k] + '</svg>';
+const SET_MENU = [
+  { label:'General', rows:[
+    { id:'rem',   t:'Reminders',  ic:'bell',    col:'#5fae6b', cards:['Reminders'] },
+    { id:'look',  t:'Appearance', ic:'palette', col:'#8fb85a', cards:['Appearance'] },
+    { id:'sched', t:'Schedule',   ic:'sliders', col:'#5b8bb8', cards:['Sleep caps', 'Energy rhythm', 'Usual days', 'Routine templates'] },
+    { id:'edit',  t:'Editing',    ic:'pencil',  col:'#e0a03a', cards:['Editing'] }] },
+  { label:'Data', rows:[
+    { id:'bk',    t:'Backup',          ic:'save',  col:'#e0787f', cards:['Backup'] },
+    { id:'cal',   t:'Calendar import', ic:'cal',   col:'#5fae6b', cards:['Calendar import'] },
+    { id:'hist',  t:'History data',    ic:'clock', col:'#5b8bb8', cards:['History data'] },
+    { id:'reset', t:'Reset',           ic:'reset', col:'#d9606a', cards:['Reset'] }] },
+  { label:'About', rows:[
+    { id:'sci',   t:'Science sources', ic:'flask', col:'#8478d0', cards:['Science sources'] },
+    { id:'about', t:'About Yotei',     ic:'info',  col:'#5b8bb8', cards:['About Yotei', 'Changelog'] }] }
+];
+function settingsValue(id){
+  if (id === 'rem'){ const R = store.get('rem', { on:false }); return R.on && (IS_NATIVE ? remNative.perm === 'granted' : ('Notification' in window && Notification.permission === 'granted')) ? 'On' : 'Off'; }
+  if (id === 'look'){ const s = $('#thSel'); return s ? s.selectedOptions[0].textContent : ''; }
+  if (id === 'edit') return editing ? 'On' : 'Off';
+  if (id === 'bk'){ const t = store.get('lastBackup', 0); return t ? (Date.now() - t < 864e5 ? 'Today' : new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric' })) : 'Never'; }
+  if (id === 'about') return 'v' + APP_VERSION;
+  return '';
+}
+function updateSettingsValues(){ document.querySelectorAll('#setMenu .setRow').forEach(r => { r.querySelector('.setV').textContent = settingsValue(r.dataset.page); }); }
+function setPageOpen(id){
+  const menu = $('#setMenu'); if (!menu) return;
+  document.querySelectorAll('#tab-settings .setPage').forEach(p => { p.hidden = p.dataset.page !== id; });
+  menu.hidden = !!id; document.body.dataset.setpage = id || '';
+  updateSettingsValues(); window.scrollTo(0, 0);
+}
+function buildSettings(){
+  const tab = $('#tab-settings'), all = [...tab.children].filter(c => c.classList.contains('sleep'));
+  const find = name => all.find(c => { const h = c.querySelector('h2'); return h && h.textContent.trim().startsWith(name); });
+  const menu = document.createElement('div'); menu.id = 'setMenu';
+  const pages = [];
+  SET_MENU.forEach(g => {
+    menu.insertAdjacentHTML('beforeend', '<p class="setLbl">' + g.label + '</p>');
+    const box = document.createElement('div'); box.className = 'setGroup';
+    g.rows.forEach(r => {
+      box.insertAdjacentHTML('beforeend', '<button type="button" class="setRow" data-page="' + r.id + '"><span class="setIc" style="background:' + r.col + '">' + sIcon(r.ic) + '</span><span class="setT">' + r.t + '</span><span class="setV"></span>' + sIcon('chev', ' class="setChev"') + '</button>');
+      const cards = r.cards.map(find).filter(Boolean);
+      const pg = document.createElement('div'); pg.className = 'setPage'; pg.dataset.page = r.id; pg.dataset.n = cards.length; pg.hidden = true;
+      pg.insertAdjacentHTML('beforeend', '<div class="setHead"><button type="button" class="setBack" aria-label="Back to Settings">' + sIcon('back') + '</button><h2>' + r.t + '</h2></div>');
+      cards.forEach(c => pg.appendChild(c)); pages.push(pg);
+    });
+    menu.appendChild(box);
+  });
+  tab.appendChild(menu); pages.forEach(p => tab.appendChild(p));
+  all.filter(c => c.parentElement === tab).forEach(c => { c.hidden = true; });   // anything not placed above stays out of the way
+  tab.addEventListener('click', e => {
+    const r = e.target.closest('.setRow'); if (r){ setPageOpen(r.dataset.page); return; }
+    if (e.target.closest('.setBack')){ setPageOpen(null); return; }
+    setTimeout(updateSettingsValues, 80);
+  });
+  tab.addEventListener('change', () => setTimeout(updateSettingsValues, 80));
+  setPageOpen(null);
+}
+buildSettings();
+
+// Loading screen: leave once everything is drawn. In the Android app it stays for at least 2 seconds so the dots are seen.
+window.__bootMin = IS_NATIVE ? 2000 : 0; if (window.__bootOff) window.__bootOff();
