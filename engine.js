@@ -25,11 +25,22 @@ export function applyOvr(b, OV, iso, dow, dm){
 
 // ctx: { dow, wake, day, CAP, MODES, WIN, OV, getBlocks(list), wins(), fmt(minutes) }
 export function buildSchedule(ctx){
-  const { dow, wake, day, CAP, MODES, WIN, OV, getBlocks, wins, fmt } = ctx;
+  const { dow, day, MODES, WIN, OV, getBlocks, wins, fmt } = ctx;
+  // Odd numbers (from an old, hand-edited or damaged backup) must never break the day: keep every number sane.
+  const clampN = (v, lo, hi, dflt) => (typeof v === 'number' && Number.isFinite(v)) ? Math.min(hi, Math.max(lo, v)) : dflt;
+  const wake = clampN(ctx.wake, 0, 1440, 300);
+  const CAP = { soft:clampN(ctx.CAP && ctx.CAP.soft, 0, 2880, 1320), hard:clampN(ctx.CAP && ctx.CAP.hard, 0, 2880, 1380) };
+  const norm = b => {
+    if (!b) return b;
+    const d = clampN(b.d, 0, 1440, 0), o = { ...b, d };
+    if (b.m !== undefined && b.m !== null) o.m = clampN(b.m, 0, d, 0);
+    ['fixed', 'at'].forEach(k => { if (b[k] !== undefined && b[k] !== null){ const v = clampN(b[k], 0, 2880, null); if (v === null) delete o[k]; else o[k] = v; } });
+    return o;
+  };
   const typeOf = k => typeOfIn(day.types, k, WIN);
   const m1 = typeOf('climb1'), M = MODES[m1 || 'none'], iso = day.date, dm = m1 || Object.values(day.types || {})[0] || null;
-  const eff = b => applyOvr(b, OV, iso, dow, dm), onDay = b => (!b.days || b.days.includes(dow)) && (!b.from || iso >= b.from) && (!b.to || iso <= b.to) && (!b.modes || (dm && b.modes.includes(dm)));
-  const ooF = k => (day.oneoffs || []).filter(x => (x.w || 'climb1') === k).map(x => ({ ...x, md:'oo', post:true }));
+  const eff = b => norm(applyOvr(b, OV, iso, dow, dm)), onDay = b => (!b.days || b.days.includes(dow)) && (!b.from || iso >= b.from) && (!b.to || iso <= b.to) && (!b.modes || (dm && b.modes.includes(dm)));
+  const ooF = k => (day.oneoffs || []).filter(x => (x.w || 'climb1') === k).map(x => norm({ ...x, md:'oo', post:true }));
   const fixSort = arr => { const ix = [], fx = []; arr.forEach((b, i) => { if ((b.fixed !== undefined || b.at !== undefined) && !b.sug){ ix.push(i); fx.push(b); } }); fx.sort((a, b) => (a.fixed !== undefined ? a.fixed : a.at) - (b.fixed !== undefined ? b.fixed : b.at)); const out = arr.slice(); ix.forEach((i, j) => { out[i] = fx[j]; }); return out; };
   const pre = fixSort(getBlocks('pre').map(eff).filter(Boolean).filter(onDay).concat(ooF('sleep'))).map(b => ({ ...b, use:b.d }));
   let msg = M.msg || '', tone = 'ok';
@@ -53,7 +64,7 @@ export function buildSchedule(ctx){
     }
   }
   let t = wake; const rows = [];
-  let shd = false; const sh = day.shift, bump = () => { if (sh && !shd && t >= sh.from){ t += sh.by; shd = true; } };
+  let shd = false; const sh = (day.shift && Number.isFinite(day.shift.from) && Number.isFinite(day.shift.by)) ? day.shift : null, bump = () => { if (sh && !shd && t >= sh.from){ t += sh.by; shd = true; } };
   for (const b of pre){
     bump();
     const bf = b.p === 'buf';

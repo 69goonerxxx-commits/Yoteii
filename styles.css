@@ -638,3 +638,22 @@ body.kb .inEmpty{min-height:0;padding-top:16px}
 .weekCard .wkKey{font-size:11px;margin-top:6px}
 #energyCard .enNow{align-items:flex-start}
 #energyCard .enNow i{margin-top:5px}
+/* ---- v3.0.4: small phones with large text, light theme status text, touch size ---- */
+.wakerow{flex-wrap:wrap;row-gap:8px}
+.uwb{min-width:0;flex:1 1 0}
+.add{min-height:36px}
+.wakerow #reset{min-width:40px;min-height:40px}
+:root[data-theme=light] .hl.ok,:root[data-theme=light] .tag.ok{color:#15803d}
+:root[data-theme=light] .tag.warn,:root[data-theme=light] #runDlg .rTime.over{color:#b45309}
+:root[data-theme=light] .tag.bad,:root[data-theme=light] #e_del,:root[data-theme=light] .hdel{color:#c2410c}
+:root[data-theme=light] .danger{color:#c2410c!important}
+#usualGrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.uwb span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.capRow{flex-wrap:wrap;row-gap:4px}
+.dtRow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.dtRow:first-child{border-top:0}
+.dtTxt{flex:1;min-width:0}
+.dtTxt b{display:block;font:600 15px 'Poppins',sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dtTxt small{display:block;color:var(--sec);font-size:12px;margin-top:2px}
+.dtAct{display:flex;gap:6px}
+#datedList .dtAct button{min-height:36px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font:600 13px 'Poppins',sans-serif;cursor:pointer}

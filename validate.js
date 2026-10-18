@@ -4,19 +4,20 @@ const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 const num = v => typeof v === 'number' && Number.isFinite(v);
 // A missing or empty (null) value is fine; a value of the wrong type is not.
 const optNum = (o, k) => o[k] === undefined || o[k] === null || num(o[k]);
+const optIn = (o, k, lo, hi) => o[k] === undefined || o[k] === null || (num(o[k]) && o[k] >= lo && o[k] <= hi);   // a number, and a sensible one
 const optStr = (o, k) => o[k] === undefined || o[k] === null || typeof o[k] === 'string';
 const arrOfObj = a => Array.isArray(a) && a.every(isObj);
 
 // One checker per known storage key. Each returns true when the parsed value has a safe shape.
 const CHECKS = {
-  blocks: v => isObj(v) && Object.values(v).every(a => arrOfObj(a) && a.every(b => optStr(b, 't') && optStr(b, 'id') && optStr(b, 'from') && optStr(b, 'to') && optNum(b, 'd') && optNum(b, 'm') && optNum(b, 'fixed') && optNum(b, 'at') && (b.days === undefined || Array.isArray(b.days)))),
-  plans: v => isObj(v) && Object.values(v).every(p => isObj(p) && optNum(p, 'w') && (p.t === undefined || isObj(p.t)) && (p.o === undefined || arrOfObj(p.o)) && optStr(p, 'n')),
+  blocks: v => isObj(v) && Object.values(v).every(a => arrOfObj(a) && a.every(b => optStr(b, 't') && optStr(b, 'id') && optStr(b, 'from') && optStr(b, 'to') && optIn(b, 'd', 0, 1440) && optIn(b, 'm', 0, 1440) && optIn(b, 'fixed', 0, 2880) && optIn(b, 'at', 0, 2880) && (b.days === undefined || Array.isArray(b.days)))),
+  plans: v => isObj(v) && Object.values(v).every(p => isObj(p) && optIn(p, 'w', 0, 1440) && (p.t === undefined || isObj(p.t)) && (p.o === undefined || arrOfObj(p.o)) && optStr(p, 'n')),
   hist: v => isObj(v) && Object.values(v).every(h => isObj(h) && (h.rows === undefined || (arrOfObj(h.rows) && h.rows.every(r => optStr(r, 't') && optNum(r, 's') && optNum(r, 'e') && optNum(r, 'u')))) && (h.note === undefined || typeof h.note === 'string')),
   ovr: v => isObj(v) && Object.values(v).every(arrOfObj),
   inbox: v => arrOfObj(v) && v.every(i => optStr(i, 't')),
   taskNotes: isObj, wins: isObj, wovr: isObj,
   usual: v => isObj(v) && Object.values(v).every(m => typeof m === 'string'),
-  caps: v => isObj(v) && optNum(v, 'soft') && optNum(v, 'hard'),
+  caps: v => isObj(v) && optIn(v, 'soft', 0, 2880) && optIn(v, 'hard', 0, 2880),
   clock: v => v === '12' || v === '24',
   wake: v => num(v) || isObj(v),               // older versions stored { home: minutes }
   schemaV: num, lastBackup: num,

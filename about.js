@@ -38,7 +38,11 @@ export const CHANGELOG = [
       'Tapping the energy level you already chose clears it',
       'The empty row of dots under the dates is hidden until something is planned'],
     fixed:[
-      'Inbox: the New Inbox Task box no longer closes by itself when the keyboard opens. It has a close button and Esc closes it'] },
+      'Inbox: the New Inbox Task box no longer closes by itself when the keyboard opens. It has a close button and Esc closes it',
+      'A damaged, hand-edited or very old backup can no longer break the day: lengths and times are kept to sensible numbers, and the backup check refuses values that are not',
+      'Light theme: green, amber and red status text is darker so it can be read',
+      'Small phones with large text: the wake time row and the usual days no longer push the page sideways',
+      'Tasks whose end date has passed vanish from the timeline, so Settings, Schedule now has a Tasks with dates list where you can edit or remove them'] },
   { v:'3.0.3', date:'Oct 2026',
     added:[
       'Loading screen: the five dots from the app icon ripple while Yotei starts (at least 2 seconds in the Android app)',

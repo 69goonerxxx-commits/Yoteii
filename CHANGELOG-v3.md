@@ -12,6 +12,10 @@ Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 
 - Reminders get Done and Snooze 10 min (action buttons). Done marks that task done for that day; Snooze schedules another notification in 10 minutes and remSync leaves snoozed ones alone.
 - Weekly review (review.js, weekSummary) at the top of History.
 - Week strip: no empty dots row until something is planned.
+- Audit fixes: engine.js keeps every number sane (a missing, negative or huge length, a minimum above the length, a NaN wake time or cap) so a bad backup cannot produce NaN times; validate.js refuses out-of-range lengths, times, wake times and caps. A 60,000-day random test found no broken day with valid input and none with odd input after this.
+- Light theme status text colours darkened for contrast. Small phones with large text: wake row wraps, usual days fit, cap rows wrap. Add task and reset buttons are a little taller.
+- Settings > Schedule > Tasks with dates lists every task that has a start or end date (Active, Not started, Ended) with Edit and Remove, because an ended task leaves the timeline.
+- Removed dead code: two overwritten handlers (#ts_del, #e_del) and five unused leftovers.
 
 ## 3.0.3
 - Loading screen: #boot in index.html, the icon's ring, check and five dots, with the dots rippling. It leaves when main.js has drawn the first screen (the Android app keeps it up for at least 2 seconds, the website does not wait). The Welcome dialog waits until it has gone, because a dialog opens above everything.

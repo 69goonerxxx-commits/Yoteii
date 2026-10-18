@@ -63,8 +63,6 @@ const CAP = Object.assign({ soft: 22*60, hard: 23*60 }, store.get('caps', {})); 
 // ============================================================
 const PRE = [];   // no built-in tasks: you add your own
 const NIGHT = [];
-const WORKOUT_DAYS = [1,4,6];  // Mon/Thu/Sat: certain, every week
-const REST_DAYS = [0,2,3,5];   // Sun/Tue/Wed/Fri: Sunday is a fixed rest day; Tue/Wed/Fri default to rest until the week-1-2 vs week-3+ rotation is set up
 const MODES = {
   home: { deadline:null, msg:'No fixed departure. The day flows from your wake time.', post:[]},
   school: { deadline:6*60, post:[]},
@@ -226,7 +224,6 @@ function dotBg(color, frac){
   const p = frac * 100;
   return 'linear-gradient(180deg,' + color + ' 0%,' + color + ' ' + Math.max(0, p - 28).toFixed(1) + '%,var(--dotbg) ' + Math.min(100, p + 12).toFixed(1) + '%)';
 }
-const COLOR_SWATCHES = ['#f59e0b','#fbbf24','#facc15','#38bdf8','#fb7185','#a78bfa','#6366f1','#22c55e','#f97316','#eef2ff'];
 const WIN_STYLE = {
   sleep:{ c:'#f59e0b', i:'sunrise' }, climb1:{ c:'#f97316', i:'mountain' }, peak:{ c:'#facc15', i:'brain' },
   trough:{ c:'#38bdf8', i:'coffee' }, climb2:{ c:'#34d399', i:'rocket' }, wmz:{ c:'#a78bfa', i:'eye' }, wind:{ c:'#6366f1', i:'moon' }
@@ -614,11 +611,6 @@ $('#ts_done').onclick = () => {
   saveDay(); $('#taskSheet').close(); render(); if (i === -1) offerTickAll(k);
 };
 $('#ts_edit').onclick = () => { $('#taskSheet').close(); openEd(sheetCtx.l, sheetCtx.id); };
-$('#ts_del').onclick = async () => {
-  if (!await ask('Delete this task?', { ok:'Delete', danger:true })) return;
-  setBlocks(sheetCtx.l, clone(getBlocks(sheetCtx.l)).filter(x => !sameId(x.id, sheetCtx.id)));
-  $('#taskSheet').close(); render();
-};
 $('#ts_dup').onclick = () => {
   const r = schedule().rows.find(x => sameId(x.id, sheetCtx.id)); if (!r) return;
   $('#taskSheet').close();
@@ -723,7 +715,6 @@ $('#e_x').onclick = () => $('#ed').close();
 $('#ed').addEventListener('input', () => { $('#e_err').hidden = true; }, true);   // capture phase: clear the old message first, so an error raised by this very input stays visible
 $('#e_up').onclick = () => moveBlock(-1);
 $('#e_dn').onclick = () => moveBlock(1);
-$('#e_del').onclick = () => { setBlocks(cur.l, clone(getBlocks(cur.l)).filter(x => !sameId(x.id, cur.id))); $('#ed').close(); render(); };
 $('#e_ok').onclick = () => {
   const t = $('#e_t').value.trim();
   if (!t){ edErr('Give the task a name first.'); return; }
@@ -888,7 +879,7 @@ function saveHist(){
 // draw() builds today's live interactive timeline.
 // ============================================================
 function render(){
-  remSoon();
+  remSoon(); if (document.body.dataset.setpage === 'sched') drawDated();
   applyWinColors();
   drawNav();
   if (document.activeElement !== $('#dnote')) $('#dnote').value = day.note || '';
@@ -1516,7 +1507,7 @@ async function remSync(){
       await LN.schedule({ notifications: plan.map(p => ({ id: p.id, title: p.title, body: p.body, channelId: REM_CHANNEL, actionTypeId: REM_ACTIONS, extra: { ds: p.ds, rid: p.rid, t: p.t }, schedule: { at: p.at, allowWhileIdle: true } })) });
     }
     remSig = sig;
-  }catch{}
+  }catch(err){ console.warn('Yotei reminders:', err); }
   finally{ remBusy = false; if (remAgain){ remAgain = false; remSoon(); } }
 }
 function remCard(){
@@ -1526,7 +1517,7 @@ function remCard(){
     const p = remNative.perm, nOn = R.on && p === 'granted';
     const st = p === 'denied' ? 'Notifications are blocked. Turn them on for Yotei in Android Settings, under Apps, Yotei, Notifications.' : nOn ? 'Reminders are on.' : 'Reminders are off.';
     const ex = nOn && remNative.exact === 'denied' ? '<p class="wn">For reminders on the exact minute, allow "Alarms &amp; reminders" for Yotei. Without it Android can delay them by a few minutes.</p><div class="ea"><button id="remExact">Allow exact timing</button></div>' : '';
-    return '<h2>Reminders</h2><p class="wn">' + st + '</p><p class="wn">Yotei sets reminders for today and the next two days with your phone\'s alarm system, so they fire even when the app is closed. If some do not show up, allow notifications and unrestricted battery use for Yotei in Android Settings.</p>' + ex + leadSel + '<div class="ea"><button id="remToggle">' + (nOn ? 'Turn off' : 'Turn on') + '</button><button id="remTest">Send test</button></div>';
+    return '<h2>Reminders</h2><p class="wn">' + st + '</p><p class="wn">Yotei sets reminders for today and the next two days with your phone\'s alarm system, so they fire even when the app is closed. If some do not show up, allow notifications and unrestricted battery use for Yotei in Android Settings.</p><p class="wn">Tasks in a part of the day where you have not chosen Home, School or Away get no reminders. Set your Usual days under Schedule so coming days are ready.</p>' + ex + leadSel + '<div class="ea"><button id="remToggle">' + (nOn ? 'Turn off' : 'Turn on') + '</button><button id="remTest">Send test</button></div>';
   }
   const state = !has ? 'Notifications are not available in this browser. On iPhone, add Yotei to your Home Screen first.' : perm === 'denied' ? 'Notifications are blocked. Allow them for this site in your browser settings.' : on ? 'Reminders are on.' : 'Reminders are off.';
   return '<h2>Reminders</h2><p class="wn">' + state + '</p><p class="wn">They only fire while Yotei is open or running in the background, and phones may pause web apps. Keep Yotei open if timing matters.</p><div class="capRow"><label for="remLead">Remind me</label><select id="remLead">' + [[0, 'At start'], [5, '5 min before'], [10, '10 min before']].map(o => '<option value="' + o[0] + '"' + (R.lead === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div><div class="ea"><button id="remToggle">' + (on ? 'Turn off' : 'Turn on') + '</button><button id="remTest">Send test</button></div>';
@@ -1889,7 +1880,6 @@ $('#ts_del').onclick = async () => {
 };
 
 // ---- move / copy a task, copy a day ----
-function winAt(n){ const WB = wins(); let w = 'climb1'; for (const k of Object.keys(WB)) if (n >= WB[k].from && n < WB[k].to) w = k; return w; }
 function addOneOff(ds, o){
   if (ds === viewDate){ day.oneoffs = (day.oneoffs || []).concat(o); saveDay(); return; }
   const p = plans[ds] || planFor(ds) || { w:defWake(), d:[], t:{}, a:false, n:'' };
@@ -2180,7 +2170,6 @@ function drawColorRow(p){
     RING.map(c => '<button type="button" class="cring' + (v === c ? ' on' : '') + '" data-c="' + c + '" style="--c:' + c + ';--ck:' + onColor(c) + '" role="radio" aria-checked="' + (v === c) + '" aria-label="Color ' + c + '"></button>').join('') +
     '<button type="button" class="cring ccustom' + (custom ? ' has on' : '') + '" data-custom="1" style="--c:' + (custom ? v : 'transparent') + '" role="radio" aria-checked="' + !!custom + '" aria-label="Pick a custom color"></button>';
 }
-function highlightColor(){ drawColorRow(); }
 function setEdAccent(){
   const c = $('#e_color').value || (WIN_STYLE[cur.wk] || WIN_STYLE.climb1).c, ed = $('#ed');
   ed.style.setProperty('--accent', c); ed.style.setProperty('--onacc', onColor(c));
@@ -2442,6 +2431,34 @@ if ('serviceWorker' in navigator && !IS_NATIVE){
   const registerSw = () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); };
   if (document.readyState === 'complete') registerSw(); else window.addEventListener('load', registerSw);
 }
+// ---- Settings > Schedule > Tasks with dates: a task past its end date leaves the timeline, so this is where it can still be found ----
+const listLabel = l => (TPL[l] && TPL[l].label) || (MODE_LABEL[l] ? MODE_LABEL[l] + ' day' : l);
+function dateText(ds){ const d = parseDay(ds), y = d.getFullYear() !== new Date().getFullYear(); return d.toLocaleDateString(undefined, y ? { month:'short', day:'numeric', year:'numeric' } : { month:'short', day:'numeric' }); }
+function datedTasks(){
+  const out = [];
+  TASK_LISTS.forEach(l => getBlocks(l).forEach(b => { if (b.from || b.to) out.push({ l, b }); }));
+  return out;
+}
+function drawDated(){
+  const el = $('#datedList'); if (!el) return;
+  const t = todayStr(), list = datedTasks();
+  el.innerHTML = list.length ? list.map(({ l, b }) => {
+    const range = b.from && b.to ? dateText(b.from) + ' to ' + dateText(b.to) : b.from ? 'From ' + dateText(b.from) : 'Until ' + dateText(b.to);
+    const st = b.to && b.to < t ? 'Ended' : b.from && b.from > t ? 'Not started' : 'Active';
+    return '<div class="dtRow"><div class="dtTxt"><b>' + esc(b.t || 'Task') + '</b><small>' + esc(listLabel(l)) + ' &middot; ' + range + ' &middot; ' + st + '</small></div><div class="dtAct"><button data-dedit="' + esc(String(b.id)) + '" data-dl="' + l + '">Edit</button><button data-drm="' + esc(String(b.id)) + '" data-dl="' + l + '" aria-label="Remove ' + esc(b.t || 'task') + '">&times;</button></div></div>';
+  }).join('') : '<p class="wn">No tasks with dates yet. When you add or change a task, choose "Or choose dates" to give it a start and an end.</p>';
+}
+$('#datedList').addEventListener('click', async e => {
+  const ed = e.target.closest('[data-dedit]'), rm = e.target.closest('[data-drm]');
+  if (ed){ openEd(ed.dataset.dl, ed.dataset.dedit); return; }
+  if (rm){
+    if (!await ask('Remove this task from every day?', { ok:'Remove', danger:true })) return;
+    const l = rm.dataset.dl, id = rm.dataset.drm, lk = (getBlocks(l).find(x => sameId(x.id, id)) || {}).lk;
+    setBlocks(l, clone(getBlocks(l)).filter(x => !sameId(x.id, id)));
+    if (lk) TASK_LISTS.forEach(L => { if (L !== l) setBlocks(L, clone(getBlocks(L)).filter(x => x.lk !== lk)); });
+    render(); drawDated(); toast('Task removed');
+  }
+});
 // ============================================================
 // SETTINGS MENU: grouped rows that each open their own page. The cards themselves are moved, not rebuilt, so every control keeps working.
 // ============================================================
@@ -2463,7 +2480,7 @@ const SET_MENU = [
   { label:'General', rows:[
     { id:'rem',   t:'Reminders',  ic:'bell',    col:'#5fae6b', cards:['Reminders'] },
     { id:'look',  t:'Appearance', ic:'palette', col:'#8fb85a', cards:['Appearance'] },
-    { id:'sched', t:'Schedule',   ic:'sliders', col:'#5b8bb8', cards:['Sleep caps', 'Energy rhythm', 'Usual days', 'Routine templates'] },
+    { id:'sched', t:'Schedule',   ic:'sliders', col:'#5b8bb8', cards:['Sleep caps', 'Energy rhythm', 'Usual days', 'Routine templates', 'Tasks with dates'] },
     { id:'edit',  t:'Editing',    ic:'pencil',  col:'#e0a03a', cards:['Editing'] }] },
   { label:'Data', rows:[
     { id:'bk',    t:'Backup',          ic:'save',  col:'#e0787f', cards:['Backup'] },
@@ -2487,7 +2504,7 @@ function setPageOpen(id){
   const menu = $('#setMenu'); if (!menu) return;
   document.querySelectorAll('#tab-settings .setPage').forEach(p => { p.hidden = p.dataset.page !== id; });
   menu.hidden = !!id; document.body.dataset.setpage = id || '';
-  updateSettingsValues(); window.scrollTo(0, 0);
+  updateSettingsValues(); if (id === 'sched') drawDated(); window.scrollTo(0, 0);
 }
 function buildSettings(){
   const tab = $('#tab-settings'), all = [...tab.children].filter(c => c.classList.contains('sleep'));
