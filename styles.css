@@ -348,7 +348,7 @@ body:not([data-tab=home]) .hdrCal{display:none}
 .tabs button.nudge .ti::after{content:'';position:absolute;top:1px;right:12px;width:9px;height:9px;border-radius:50%;background:var(--warn)}
 #fab{position:fixed;z-index:11;right:calc(max(0px,(100vw - 430px) / 2) + 18px);bottom:calc(92px + var(--sai-b));width:60px;height:60px;border-radius:50%;border:0;background:var(--accent);color:#fff;display:none;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.4);cursor:pointer}
 #fab svg{width:30px;height:30px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round}
-body[data-tab=home] #fab,body[data-tab=inbox] #fab{display:flex}
+body[data-tab=home] #fab,body[data-tab=inbox] #fab,body[data-tab=todo] #fab{display:flex}
 #fabMenu{width:100%;max-width:430px;margin:auto auto 0;border:0;border-radius:26px 26px 0 0;padding:0;background:var(--bg);color:var(--text)}
 #fabMenu::backdrop{background:rgba(0,0,0,.5)}
 .fabIn{padding:16px 16px calc(16px + var(--sai-b));display:flex;flex-direction:column;gap:8px}
@@ -619,7 +619,6 @@ body.editing #editDone{display:inline-block}
 :root[data-theme=light] .cring[data-c="#f8fafc"]{box-shadow:inset 0 0 0 1.5px #cbd5e1}
 /* ---- v3.0.4: Inbox box with a close button, and no gap when the keyboard is up ---- */
 #inboxCard .inRow #inCancel{flex:none;width:44px;padding:0;font-size:20px}
-body.kb .inEmpty{min-height:0;padding-top:16px}
 /* ---- v3.0.4: no empty dots row under the dates when nothing is planned ---- */
 #weekstrip.nodots .wdots{display:none}
 
@@ -657,3 +656,110 @@ body.kb .inEmpty{min-height:0;padding-top:16px}
 .dtTxt small{display:block;color:var(--sec);font-size:12px;margin-top:2px}
 .dtAct{display:flex;gap:6px}
 #datedList .dtAct button{min-height:36px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font:600 13px 'Poppins',sans-serif;cursor:pointer}
+
+/* ---- v3.1: Inbox like the original, quick-add dialog, To-do tab, subtask rows, welcome cards ---- */
+.qcard{background:none;border:0;box-shadow:none;margin:0;padding:8px 16px 24px}
+.inEmpty{min-height:68vh;padding:0}
+.inEmpty .inIcon{width:38px;height:38px;border-radius:8px;margin-bottom:26px}
+.inEmpty .inIcon svg{width:24px;height:24px}
+.inEmpty h2{font:600 17px/1.3 'Poppins',sans-serif;margin:0 0 10px;padding:0 24px}
+.inEmpty .wn{max-width:300px;margin:0 0 20px;padding:0 8px;font-size:14px;line-height:1.45}
+#inboxCard .inNew,#todoCard .inNew{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 14px;border:0;border-radius:12px;background:color-mix(in srgb,var(--accent) 22%,var(--card));color:var(--accent);font:600 16px 'Poppins',sans-serif;cursor:pointer}
+#inboxCard .inNew svg,#todoCard .inNew svg{width:20px;height:20px;stroke-width:2;stroke-linecap:round;fill:none}
+#todoCard .inEmpty .inNew{margin-top:0}
+.inList .inItem{padding:12px 14px}
+#qaDlg{margin:max(12vh,64px) auto auto}
+#qaDlg h2{font:600 17px 'Poppins',sans-serif;margin:0 0 12px}
+#qaDlg #qa_t{width:100%;box-sizing:border-box;font:500 15px 'Poppins',sans-serif;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
+#qaDlg #qa_ok{background:var(--accent);color:#06121f;border-color:transparent}
+.tdList{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.tdItem{display:flex;align-items:center;gap:6px;background:var(--card);border-radius:14px;padding:4px 6px 4px 4px}
+.tdChk{flex:none;width:44px;height:44px;border:0;background:none;display:grid;place-items:center;cursor:pointer;padding:0}
+.tdChk::before{content:'';width:22px;height:22px;border-radius:50%;border:2px solid var(--sec);box-sizing:border-box}
+.tdItem.done .tdChk::before{background:var(--accent);border-color:var(--accent);box-shadow:inset 0 0 0 4px var(--card)}
+.tdTxt{flex:1;min-width:0;text-align:left;border:0;background:none;color:var(--text);font:500 15px/1.35 'Poppins',sans-serif;padding:10px 4px;cursor:pointer;word-break:break-word}
+.tdItem.done .tdTxt{color:var(--sec);text-decoration:line-through}
+.tdRm{flex:none;width:40px;height:40px;border:0;background:none;color:var(--sec);font-size:22px;cursor:pointer;padding:0}
+.tdSub{display:flex;align-items:center;justify-content:space-between;margin:20px 4px 0;font:600 13px 'Poppins',sans-serif;color:var(--sec)}
+.tdSub button{border:0;background:none;color:var(--accent);font:600 13px 'Poppins',sans-serif;padding:6px 4px;cursor:pointer}
+.sdWrap{display:block}
+.sdLab{display:block;margin-bottom:6px}
+.sdLab em{font-style:normal;color:var(--sec)}
+#e_steps{display:flex;flex-direction:column;gap:6px}
+.sdRow{display:flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:2px 4px}
+.sdRow.drag{opacity:.7;border-color:var(--accent)}
+.sdH{flex:none;width:30px;text-align:center;color:var(--sec);font-size:16px;letter-spacing:-3px;touch-action:none;cursor:grab;user-select:none;padding:10px 0}
+.sdIn{flex:1;min-width:0;border:0;background:none;color:var(--text);font:500 14px 'Poppins',sans-serif;padding:10px 4px}
+.sdX{flex:none;width:36px;height:36px;border:0;background:none;color:var(--sec);font-size:20px;cursor:pointer;padding:0}
+.sdAdd{margin-top:8px;width:100%;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;background:none;color:var(--accent);font:600 14px 'Poppins',sans-serif;cursor:pointer}
+#welDlg{padding:0;overflow:hidden;width:min(92vw,400px)}
+#welDlg .wlIn{display:flex;flex-direction:column}
+.wlTrack{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.wlTrack::-webkit-scrollbar{display:none}
+.wlCard{flex:0 0 100%;box-sizing:border-box;scroll-snap-align:center;padding:36px 28px 8px;text-align:center;min-height:300px;display:flex;flex-direction:column;align-items:center}
+.wlIc{width:64px;height:64px;border-radius:16px;background:var(--accent);color:var(--bg);display:grid;place-items:center;margin-bottom:24px}
+.wlIc svg{width:36px;height:36px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.wlCard h2{font:600 20px 'Poppins',sans-serif;margin:0 0 12px}
+.wlCard p{margin:0;font-size:14.5px;line-height:1.55;color:var(--sec)}
+.wlCard .wlCredit{margin-top:16px;font-size:13px}
+.wlDots{display:flex;justify-content:center;gap:8px;padding:10px 0 4px}
+.wlDots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.wlDots i.on{background:var(--accent)}
+#welDlg .ea{padding:8px 16px 16px}
+.setCredit{text-align:center;font:500 12px 'Poppins',sans-serif;color:var(--sec);margin:22px 0 6px}
+
+/* ---- v3.1.1 phase 1: To-do lists, star, drag, sort ---- */
+.tdChips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none;margin:0 -16px;padding-left:16px;padding-right:16px}
+.tdChips::-webkit-scrollbar{display:none}
+.tdChip{flex:none;border:0;border-radius:999px;padding:8px 16px;background:var(--card);color:var(--sec);font:600 14px 'Poppins',sans-serif;cursor:pointer;white-space:nowrap}
+.tdChip.on{background:color-mix(in srgb,var(--accent) 24%,var(--card));color:var(--accent)}
+.tdChip.tdAddL{padding:8px 14px;color:var(--accent)}
+#todoCard .inEmpty{min-height:56vh}
+.tdBar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 2px 0}
+.tdSortL{display:flex;align-items:center;gap:8px;font:600 13px 'Poppins',sans-serif;color:var(--sec)}
+.tdSortL select{font:600 13px 'Poppins',sans-serif;color:var(--text);background:var(--card);border:0;border-radius:9px;padding:7px 8px}
+.tdLink{border:0;background:none;color:var(--accent);font:600 13px 'Poppins',sans-serif;padding:8px 4px;cursor:pointer}
+#todoCard .inEmpty .tdLink{margin-top:10px}
+.tdList+.tdList{margin-top:8px}
+.tdTxt{display:flex;flex-direction:column;align-items:flex-start}
+.tdTxt small{font:500 11px 'Poppins',sans-serif;color:var(--sec);margin-top:2px}
+.tdStar{flex:none;width:36px;height:40px;border:0;background:none;color:var(--sec);display:grid;place-items:center;padding:0;cursor:pointer}
+.tdStar svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linejoin:round}
+.tdStar.on{color:#f5b942}
+.tdStar.on svg{fill:currentColor}
+.tdH{flex:none;width:26px;text-align:center;color:var(--sec);font-size:16px;letter-spacing:-3px;touch-action:none;cursor:grab;user-select:none;padding:12px 0}
+.tdItem.drag{opacity:.75;box-shadow:0 0 0 2px var(--accent)}
+.tdChk{width:40px}
+.tdRm{width:34px}
+.tdSub #tdDoneTog{display:flex;align-items:center;gap:4px;color:var(--sec)}
+.tdSub #tdDoneTog svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transform:rotate(-90deg);transition:transform .15s}
+.tdSub #tdDoneTog svg.open{transform:none}
+#tdlDlg{margin:max(12vh,64px) auto auto}
+#tdlDlg h2{font:600 17px 'Poppins',sans-serif;margin:0 0 12px}
+#tdlDlg #tdl_t{width:100%;box-sizing:border-box;font:500 15px 'Poppins',sans-serif;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
+#tdlDlg #tdl_ok{background:var(--accent);color:#06121f;border-color:transparent}
+
+/* ---- v3.1.1 phase 2: to-do due dates, subtasks, notes, editor ---- */
+.tdMain{flex:1;min-width:0;padding:2px 0}
+.tdMain .tdTxt{display:block;width:100%;padding:9px 4px 2px}
+.tdMain .tdTxt:last-child{padding-bottom:9px}
+.tdMeta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:0 4px 8px;font:500 12px 'Poppins',sans-serif;color:var(--sec)}
+.tdDue{color:var(--sec)}
+.tdDue.late{color:var(--bad,#f87171);font-weight:600}
+.tdTag{color:var(--sec);opacity:.85}
+.tdMb{display:inline-flex;align-items:center;gap:4px;border:0;background:none;color:var(--sec);font:600 12px 'Poppins',sans-serif;padding:4px 2px;cursor:pointer}
+.tdMb svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tdMb[aria-expanded=true]{color:var(--accent)}
+.tdExp{padding:0 4px 8px}
+.tdStp{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;color:var(--text);font:500 13.5px/1.35 'Poppins',sans-serif;padding:8px 0;cursor:pointer}
+.tdSc{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--sec);box-sizing:border-box}
+.tdStp.done{color:var(--sec);text-decoration:line-through}
+.tdStp.done .tdSc{background:var(--accent);border-color:var(--accent);box-shadow:inset 0 0 0 3px var(--card)}
+.tdNote{margin-top:4px;padding:10px 12px;background:var(--card2);border-radius:10px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+#tdeDlg{max-height:92dvh;padding:16px 0}
+#tdeDlg .ef{max-height:calc(92dvh - 34px);overflow-y:auto;padding:0 16px}
+#tdeDlg h2{font:600 17px 'Poppins',sans-serif;margin:0}
+#tdeDlg #tde_ok{background:var(--accent);color:#06121f;border-color:transparent}
+#tdeDlg .chips button.on{background:var(--accent);color:#06121f}
+
+#tde_move button{border-style:dashed;color:var(--accent)}

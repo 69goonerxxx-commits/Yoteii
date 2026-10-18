@@ -369,7 +369,7 @@ function openEd(l, id, w, startAt){
   $('#e_days').style.display = l === 'oo' ? 'none' : '';
   $('#e_dates').style.display = l === 'oo' ? 'none' : ''; $('#e_from').value = x.from || ''; $('#e_to').value = x.to || '';
   drawEdTypes();
-  $('#e_details').value = x.details || ''; $('#e_p').value = (x.steps || []).join('\n');
+  $('#e_details').value = x.details || ''; edSteps.set(x.steps);
   edDays = x.days ? x.days.slice() : [0,1,2,3,4,5,6]; drawDays();
   ['e_del','e_up','e_dn'].forEach(i => { $('#' + i).style.display = b ? '' : 'none'; });
   $('#ed').showModal(); $('#ed .ef').scrollTop = 0;
@@ -620,13 +620,49 @@ $('#ts_dup').onclick = () => {
   $('#e_d').value = r.d !== undefined ? r.d : r.use; $('#e_m').value = r.m ?? ''; highlightChip();
   $('#e_icon').value = r.icon || ''; updateIconBtn();
   $('#e_color').value = r.color || ''; drawColorRow('e'); setEdAccent();
-  $('#e_details').value = r.details || ''; $('#e_p').value = (r.steps || []).join('\n');
+  $('#e_details').value = r.details || ''; edSteps.set(r.steps);
   endDriven = false; $('#e_s').value = ''; $('#e_e').value = ''; $('#e_fx').checked = false; refreshWinLock(); applyKindUI();
 };
 // ============================================================
 // SUBTASK SHEET — opens from the small icon next to a task's
 // subtask count. Checklist only, no Delete/Duplicate/Edit here.
 // ============================================================
+// ---- subtask rows (task editor and to-do editor): add one at a time, drag to reorder, remove with the cross ----
+function stepRow(v){
+  const o = typeof v === 'string' ? { t:v } : (v || {});
+  const d = document.createElement('div'); d.className = 'sdRow'; if (o.d) d.dataset.d = '1';
+  d.innerHTML = '<span class="sdH" aria-label="Drag to reorder" title="Drag to reorder">&#8942;&#8942;</span><input class="sdIn" maxlength="120" placeholder="Subtask" aria-label="Subtask"><button type="button" class="sdX" aria-label="Remove subtask">&times;</button>';
+  d.querySelector('input').value = o.t || ''; return d;
+}
+function makeSteps(boxSel, nSel, addSel){
+  const box = $(boxSel);
+  const get = () => [...box.querySelectorAll('.sdRow')].map(r => ({ t:r.querySelector('.sdIn').value.trim(), d:r.dataset.d === '1' })).filter(s => s.t);
+  const count = () => { const n = get().length; $(nSel).textContent = n ? '(' + n + ')' : ''; };
+  const set = a => { box.innerHTML = ''; (a || []).forEach(v => box.appendChild(stepRow(v))); count(); };
+  $(addSel).onclick = () => { const r = stepRow(''); box.appendChild(r); r.querySelector('input').focus(); };
+  box.addEventListener('input', count);
+  box.addEventListener('click', e => { const x = e.target.closest('.sdX'); if (x){ x.closest('.sdRow').remove(); count(); } });
+  box.addEventListener('keydown', e => {
+    const inp = e.target.closest('.sdIn'); if (!inp) return;
+    const row = inp.closest('.sdRow');
+    if (e.key === 'Enter'){ e.preventDefault(); if (!inp.value.trim()) return; const r = stepRow(''); row.after(r); r.querySelector('input').focus(); }
+    else if (e.key === 'Backspace' && !inp.value){ e.preventDefault(); const p = row.previousElementSibling; row.remove(); count(); if (p) p.querySelector('input').focus(); }
+  });
+  let row = null;
+  box.addEventListener('pointerdown', e => { const h = e.target.closest('.sdH'); if (!h) return; row = h.closest('.sdRow'); row.classList.add('drag'); h.setPointerCapture(e.pointerId); e.preventDefault(); });
+  box.addEventListener('pointermove', e => {
+    if (!row) return;
+    const others = [...box.children].filter(r => r !== row); let before = null;
+    for (const r of others){ const b = r.getBoundingClientRect(); if (e.clientY < b.top + b.height / 2){ before = r; break; } }
+    if (before !== row.nextElementSibling) box.insertBefore(row, before);
+  });
+  const end = () => { if (row){ row.classList.remove('drag'); row = null; } };
+  box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+  return { get, set };
+}
+const edSteps = makeSteps('#e_steps', '#e_stepsN', '#e_stepAdd');
+const tdeSteps = makeSteps('#tde_steps', '#tde_stepsN', '#tde_stepAdd');
+
 let stepsSheetId = null;
 function tickAllSteps(id, on = true){
   const r = schedule().rows.find(x => sameId(x.id, id)); if (!r || !(r.steps || []).length) return;
@@ -732,7 +768,8 @@ $('#e_ok').onclick = () => {
   const details = $('#e_details').value.trim(); if (details) b.details = details;
   const color = $('#e_color').value.trim(); if (color) b.color = color;
   const icon = $('#e_icon').value.trim(); if (icon) b.icon = icon;
-  const steps = $('#e_p').value.split('\n').map(z => z.trim()).filter(Boolean); if (steps.length) b.steps = steps;
+  const steps = edSteps.get().map(s => s.t); if (steps.length) b.steps = steps;
+  if (cur.fromInbox) b.src = 'inbox'; else if (cur.fromTodo) b.src = 'todo';     // shown as a small tag on the timeline
   if (cur.l !== 'oo'){ if (!edDays.length){ edErr('Pick at least one day.'); return; } if (edDays.length < 7) b.days = edDays.slice().sort(); }
   if (cur.l !== 'oo'){
     const f0 = $('#e_from').value, t0 = $('#e_to').value;
@@ -769,6 +806,7 @@ $('#e_ok').onclick = () => {
   needLive();
   if (old0) arr[arr.indexOf(old0)] = b; else arr.push(b);
   if (cur.fromInbox) store.set('inbox', store.get('inbox', []).filter(x => x.id !== cur.fromInbox));
+  if (cur.fromTodo){ store.set('todos', store.get('todos', []).filter(x => x.id !== cur.fromTodo)); drawTodo(); }
   setBlocks(cur.l, arr); $('#ed').close(); render();
 };
 $('#e_x2').onclick = () => $('#e_x').click();
@@ -883,7 +921,7 @@ function render(){
   applyWinColors();
   drawNav();
   if (document.activeElement !== $('#dnote')) $('#dnote').value = day.note || '';
-  drawInbox(); drawEnergy(); drawEmpty();
+  drawInbox(); drawTodo(); drawEnergy(); drawEmpty();
   document.body.classList.toggle('snap', snapMode());
   draw();
   $('#trends').innerHTML = trendsHtml();
@@ -912,7 +950,7 @@ function draw(){
     const isNow = r.use > 0 && !r.sug && NM >= r.start && NM < r.end;
     const winB = WIN[r.w] ? wins()[r.w] : null;
     const overflow = winB && r.use > 0 && !r.sug && r.start <= w + winB.to && r.end > w + winB.to;
-    const sw = (prev && prev.md && r.md !== prev.md && MODE_NAME[r.md] ? '<span class="tag warn">switched to ' + MODE_NAME[r.md] + '</span>' : '') + (r.fixed !== undefined ? '<span class="tag">fixed time</span>' : '') + (overflow ? '<span class="tag warn">runs past window end</span>' : '');
+    const sw = (prev && prev.md && r.md !== prev.md && MODE_NAME[r.md] ? '<span class="tag warn">switched to ' + MODE_NAME[r.md] + '</span>' : '') + (r.src ? '<span class="tag">from ' + (r.src === 'todo' ? 'To-do' : 'Inbox') + '</span>' : '') + (r.fixed !== undefined ? '<span class="tag">fixed time</span>' : '') + (overflow ? '<span class="tag warn">runs past window end</span>' : '');
     if (cut) tag = '<span class="tag bad">' + (r.capCut ? 'past sleep cap' : 'cut today') + '</span>';
     else if (r.m !== undefined && r.use < r.d) tag = '<span class="tag warn">' + (r.use - r.d) + ' min</span>';
     else if (r.p === 'buf') tag = '<span class="tag ok">buffer</span>';
@@ -1029,7 +1067,7 @@ $('#tl').addEventListener('click', e => {
   if (ns){
     const id = ns.dataset.nid, txt = e.target.closest('.noteEdit').querySelector('.ntxt').value.trim();
     setNote(id, txt);
-    if (txt) shownNotes.add(noteKey(id)); else shownNotes.delete(noteKey(id));
+    if (!txt) shownNotes.delete(noteKey(id));   // notes stay hidden until you tap the note icon
     noteEditing = null; render(); if (txt) toast('Note saved'); return;
   }
   const ad = e.target.closest('.add');
@@ -1610,28 +1648,20 @@ $('#dnote').parentElement.insertAdjacentHTML('beforebegin', '<div class="inbox" 
 $('#tab-inbox').appendChild($('#inboxCard'));
 const IN_PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="M12 7.5v9M7.5 12h9" stroke="var(--bg)"/></svg>';
 const IN_TRAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="currentColor" stroke="none" opacity=".25"/><path d="M4 13h4.5l1.2 2.2h4.6L15.5 13H20M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></svg>';
-var inOpen = false;      // the "New Inbox Task" box is showing
 function drawInbox(){
   const el = $('#inboxCard'); if (!el) return;
-  const keep = $('#inT') ? $('#inT').value : '', list = store.get('inbox', []);
-  const btn = '<button class="inNew" id="inNew"' + (inOpen ? ' hidden' : '') + '>' + IN_PLUS + '<span>New Inbox Task</span></button>';
-  const comp = '<div class="inRow" id="inComposer"' + (inOpen ? '' : ' hidden') + '><input id="inT" placeholder="Add a task" maxlength="80" aria-label="New inbox task"><button id="inAdd">Add</button><button id="inCancel" aria-label="Close" type="button">&times;</button></div>';
+  const list = store.get('inbox', []);
+  const btn = '<button class="inNew" id="inNew">' + IN_PLUS + '<span>New Inbox Task</span></button>';
   const items = list.map(x => '<div class="inItem"><span>' + esc(x.t) + '</span><span class="inAct"><button data-sch="' + x.id + '">Schedule</button><button data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></span></div>').join('');
   el.innerHTML = list.length
-    ? btn + comp + '<div class="inList">' + items + '</div>'
-    : '<div class="inEmpty"><div class="inIcon">' + IN_TRAY + '</div><h2>Your unscheduled thoughts</h2><p class="wn">Capture a task now. Schedule it when you know when.</p>' + btn + comp + '</div>';
-  $('#inT').value = keep;
+    ? btn + '<div class="inList">' + items + '</div>'
+    : '<div class="inEmpty"><div class="inIcon">' + IN_TRAY + '</div><h2>Your Unscheduled Thoughts</h2><p class="wn">Capture tasks and thoughts as they come. Move them to your timeline when you\u2019re ready to schedule.</p>' + btn + '</div>';
 }
-function openInboxComposer(){ setTab('inbox'); inOpen = true; drawInbox(); setTimeout(() => $('#inT') && $('#inT').focus(), 60); }
+function openInboxComposer(){ setTab('inbox'); openQuickAdd(); }
 $('#inboxCard').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  if (b.id === 'inNew'){ openInboxComposer(); return; }
-  if (b.id === 'inCancel'){ inOpen = false; $('#inT').value = ''; drawInbox(); return; }
-  if (b.id === 'inAdd'){
-    const v = $('#inT').value.trim(); if (!v) return;
-    const l = store.get('inbox', []); l.push({ id:'i' + Date.now().toString(36), t:v }); store.set('inbox', l);
-    $('#inT').value = ''; drawInbox(); $('#inT').focus();
-  } else if (b.dataset.rm){ const _s = grab(); store.set('inbox', store.get('inbox', []).filter(x => x.id !== b.dataset.rm)); drawInbox(); showUndo('Removed from inbox', _s); }
+  if (b.id === 'inNew'){ openQuickAdd(); return; }
+  if (b.dataset.rm){ const _s = grab(); store.set('inbox', store.get('inbox', []).filter(x => x.id !== b.dataset.rm)); drawInbox(); showUndo('Removed from inbox', _s); }
   else if (b.dataset.sch){
     const it = store.get('inbox', []).find(x => x.id === b.dataset.sch);
     if (it){ openEd('oo', null, defaultWin()); $('#e_t').value = it.t; cur.fromInbox = it.id; }
@@ -1639,10 +1669,204 @@ $('#inboxCard').addEventListener('click', e => {
   else if (b.id === 'cpDay') openMv('day');
   else if (b.id === 'lateBtn') openShift();
 });
-$('#inboxCard').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.id === 'inT'){ e.preventDefault(); $('#inAdd').click(); }
-  if (e.key === 'Escape' && e.target.id === 'inT'){ $('#inCancel').click(); }
+
+// ---- quick-add box (Inbox). It is a dialog, so the keyboard cannot push the page around. ----
+function openQuickAdd(){
+  $('#qa_title').textContent = 'New inbox task'; $('#qa_ok').textContent = 'Add'; $('#qa_t').placeholder = 'Add a task'; $('#qa_t').value = '';
+  $('#qaDlg').showModal(); $('#qa_t').focus(); setTimeout(() => $('#qa_t').focus(), 80);
+}
+function qaSave(){
+  const v = $('#qa_t').value.trim(); if (!v) return;
+  const l = store.get('inbox', []); l.push({ id:'i' + Date.now().toString(36), t:v }); store.set('inbox', l); drawInbox();
+  $('#qaDlg').close();
+}
+$('#qa_ok').onclick = qaSave;
+$('#qa_x').onclick = () => $('#qaDlg').close();
+$('#qa_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); qaSave(); } });
+
+// ---- To-do tab: lists as chips, star, due date, subtasks, drag to reorder, sort, show done ----
+let tdSel = 'all';       // the chip that is selected: 'all' or a list id
+const tdOpen = new Set();   // to-dos whose subtasks and note are showing
+const IN_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg>';
+const TD_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>';
+const TD_STEP = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></svg>';
+const TD_NOTE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>';
+function tdLists(){ const s = store.get('todoLists', null), a = Array.isArray(s) ? s.filter(x => x && x.id).slice() : []; if (!a.some(x => x.id === 'main')) a.unshift({ id:'main', name:'Tasks' }); return a; }
+function tdListOf(x, ls){ return x.l && (ls || tdLists()).some(z => z.id === x.l) ? x.l : 'main'; }
+function tdPrefs(){ return Object.assign({ sort:'mine', done:true }, store.get('todoPrefs', {})); }
+function tdSetPref(k, v){ const p = store.get('todoPrefs', {}); p[k] = v; store.set('todoPrefs', p); }
+const tdMin = s => { const z = /^(\d{2}):(\d{2})$/.exec(s || ''); return z ? +z[1] * 60 + +z[2] : null; };
+function tdDue(x){        // the due label, and whether the to-do is overdue
+  if (!x.due) return null;
+  const td = todayStr(), t0 = parseDay(td), n = k => { const d = new Date(t0); d.setDate(t0.getDate() + k); return isoLocal(d); };
+  const mins = tdMin(x.dt), late = !x.done && (x.due < td || (x.due === td && mins !== null && mins < nowM()));
+  const day = x.due === td ? 'Today' : x.due === n(1) ? 'Tomorrow' : x.due === n(-1) ? 'Yesterday'
+    : parseDay(x.due).toLocaleDateString(undefined, Object.assign({ weekday:'short', month:'short', day:'numeric' }, x.due.slice(0, 4) !== td.slice(0, 4) ? { year:'numeric' } : {}));
+  return { late, text:(late ? 'Overdue \u00b7 ' : '') + day + (mins !== null ? ', ' + fmt(mins).join(' ') : '') };
+}
+function drawTodo(){
+  const el = $('#todoCard'); if (!el) return;
+  const lists = tdLists(); if (tdSel !== 'all' && !lists.some(x => x.id === tdSel)) tdSel = 'all';
+  const P = tdPrefs(), all = store.get('todos', []), view = all.filter(x => tdSel === 'all' || tdListOf(x, lists) === tdSel);
+  const nameOf = id => (lists.find(x => x.id === id) || lists[0]).name;
+  const chips = '<div class="tdChips" role="tablist" aria-label="Lists">' + [{ id:'all', name:'All' }].concat(lists).map(x => '<button type="button" role="tab" class="tdChip' + (x.id === tdSel ? ' on' : '') + '" data-ls="' + x.id + '" aria-selected="' + (x.id === tdSel) + '">' + esc(x.name) + '</button>').join('') + '<button type="button" class="tdChip tdAddL" data-ls="+" aria-label="New list">+</button></div>';
+  const btn = '<button class="inNew" id="tdNew">' + IN_PLUS + '<span>New To-do</span></button>';
+  if (!view.length){
+    el.innerHTML = chips + '<div class="inEmpty"><div class="inIcon">' + IN_CHECK + '</div><h2>' + (tdSel === 'all' ? 'Your To-do List' : esc(nameOf(tdSel))) + '</h2><p class="wn">' + (tdSel === 'all' ? 'A simple checklist for things to get done. Add a date if it has a deadline, and tick them off as you go.' : 'Nothing in this list yet.') + '</p>' + btn + (tdSel !== 'all' ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
+    return;
+  }
+  const open = view.filter(x => !x.done), dn = view.filter(x => x.done);
+  const dueKey = x => (x.due || '9999-99-99') + ' ' + (x.dt || '99:99');
+  const sortFn = P.sort === 'az' ? (a, b) => a.t.localeCompare(b.t) : P.sort === 'new' ? (a, b) => String(b.id).localeCompare(String(a.id)) : P.sort === 'due' ? (a, b) => dueKey(a).localeCompare(dueKey(b)) : null;
+  const arrange = a => sortFn ? a.slice().sort(sortFn) : a;
+  const drag = P.sort === 'mine';
+  const row = x => {
+    const di = tdDue(x), st = Array.isArray(x.steps) ? x.steps : [], nd = st.filter(s => s.d).length, ex = tdOpen.has(x.id) && (st.length || x.note);
+    const tagTxt = lists.length > 1 && tdSel === 'all' ? '<span class="tdTag">' + esc(nameOf(tdListOf(x, lists))) + '</span>' : '';
+    const exBtn = (ic, txt, lab) => '<button type="button" class="tdMb" data-ex="' + x.id + '" aria-expanded="' + !!ex + '" aria-label="' + lab + '">' + ic + txt + '</button>';
+    const meta = (di ? '<span class="tdDue' + (di.late ? ' late' : '') + '">' + esc(di.text) + '</span>' : '') +
+      (st.length ? exBtn(TD_STEP, nd + '/' + st.length, 'Subtasks, ' + nd + ' of ' + st.length + ' done') : '') + (x.note ? exBtn(TD_NOTE, '', 'Note') : '') + tagTxt;
+    const exp = ex ? '<div class="tdExp">' + st.map((s, i) => '<button type="button" class="tdStp' + (s.d ? ' done' : '') + '" data-sg="' + x.id + '" data-si="' + i + '"><span class="tdSc"></span><span>' + esc(s.t) + '</span></button>').join('') + (x.note ? '<div class="tdNote">' + esc(x.note) + '</div>' : '') + '</div>' : '';
+    return '<div class="tdItem' + (x.done ? ' done' : '') + '" data-id="' + x.id + '"><button class="tdChk" data-tg="' + x.id + '" aria-pressed="' + (x.done ? 'true' : 'false') + '" aria-label="' + (x.done ? 'Mark not done: ' : 'Mark done: ') + esc(x.t) + '"></button>' +
+      '<div class="tdMain"><button class="tdTxt" data-ed="' + x.id + '">' + esc(x.t) + '</button>' + (meta ? '<div class="tdMeta">' + meta + '</div>' : '') + exp + '</div>' +
+      (x.done ? '' : '<button class="tdStar' + (x.star ? ' on' : '') + '" data-st="' + x.id + '" aria-pressed="' + (x.star ? 'true' : 'false') + '" aria-label="' + (x.star ? 'Remove star: ' : 'Star: ') + esc(x.t) + '">' + TD_STAR + '</button>') +
+      (!x.done && drag ? '<span class="tdH" aria-label="Drag to reorder" title="Drag to reorder">&#8942;&#8942;</span>' : '') +
+      '<button class="tdRm" data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></div>';
+  };
+  const grp = (a, g) => a.length ? '<div class="tdList" data-grp="' + g + '">' + a.map(row).join('') + '</div>' : '';
+  const isLate = x => { const d = tdDue(x); return !!(d && d.late); };
+  const opt = (v, t) => '<option value="' + v + '"' + (P.sort === v ? ' selected' : '') + '>' + t + '</option>';
+  const bar = '<div class="tdBar"><label class="tdSortL"><span>Sort</span><select id="td_sort" aria-label="Sort by">' + opt('mine', 'My order') + opt('due', 'Due date') + opt('az', 'A to Z') + opt('new', 'Newest first') + '</select></label>' + (tdSel !== 'all' ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
+  el.innerHTML = chips + btn + bar + grp(arrange(open.filter(x => x.star)), 'star') + grp(arrange(open.filter(x => !x.star && isLate(x))), 'late') + grp(arrange(open.filter(x => !x.star && !isLate(x))), 'norm') +
+    (dn.length ? '<p class="tdSub"><button type="button" id="tdDoneTog" aria-expanded="' + P.done + '">Done (' + dn.length + ')<svg viewBox="0 0 24 24" aria-hidden="true" class="' + (P.done ? 'open' : '') + '"><path d="M6 9l6 6 6-6"/></svg></button><button type="button" id="tdClear">Clear done</button></p>' + (P.done ? grp(arrange(dn), 'done') : '') : '');
+}
+$('#todoCard').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.ls){ if (b.dataset.ls === '+') openListDlg(null); else { tdSel = b.dataset.ls; drawTodo(); } return; }
+  if (b.id === 'tdNew'){ openTodoEd(null); return; }
+  if (b.id === 'tdListEdit'){ openListDlg(tdSel); return; }
+  if (b.id === 'tdDoneTog'){ tdSetPref('done', !tdPrefs().done); drawTodo(); return; }
+  if (b.dataset.ex){ if (tdOpen.has(b.dataset.ex)) tdOpen.delete(b.dataset.ex); else tdOpen.add(b.dataset.ex); drawTodo(); return; }
+  const l = store.get('todos', []);
+  if (b.dataset.tg){ const it = l.find(x => x.id === b.dataset.tg); if (it){ it.done = !it.done; store.set('todos', l); drawTodo(); try{ if (it.done && navigator.vibrate) navigator.vibrate(15); }catch{} } }
+  else if (b.dataset.st){ const it = l.find(x => x.id === b.dataset.st); if (it){ if (it.star) delete it.star; else it.star = true; store.set('todos', l); drawTodo(); } }
+  else if (b.dataset.sg){ const it = l.find(x => x.id === b.dataset.sg), s = it && Array.isArray(it.steps) ? it.steps[+b.dataset.si] : null; if (s){ s.d = !s.d; store.set('todos', l); drawTodo(); } }
+  else if (b.dataset.ed) openTodoEd(b.dataset.ed);
+  else if (b.dataset.rm){ const _s = grab(); store.set('todos', l.filter(x => x.id !== b.dataset.rm)); drawTodo(); showUndo('To-do removed', _s); }
+  else if (b.id === 'tdClear'){
+    const ls = tdLists(), _s = grab(); store.set('todos', l.filter(x => !(x.done && (tdSel === 'all' || tdListOf(x, ls) === tdSel)))); drawTodo(); showUndo('Cleared the done to-dos', _s);
+  }
 });
+$('#todoCard').addEventListener('change', e => { if (e.target.id === 'td_sort'){ tdSetPref('sort', e.target.value); drawTodo(); } });
+// drag a to-do by its handle; it moves within its own group (starred, overdue, other, or done)
+function tdReorder(ids){
+  const l = store.get('todos', []), set = new Set(ids), slots = [];
+  l.forEach((x, i) => { if (set.has(x.id)) slots.push(i); });
+  const by = {}; l.forEach(x => { by[x.id] = x; });
+  ids.forEach((id, k) => { if (by[id] !== undefined && slots[k] !== undefined) l[slots[k]] = by[id]; });
+  store.set('todos', l); drawTodo();
+}
+(function(){
+  let row = null, box = null; const card = $('#todoCard');
+  card.addEventListener('pointerdown', e => { const h = e.target.closest('.tdH'); if (!h) return; row = h.closest('.tdItem'); box = row.parentElement; row.classList.add('drag'); h.setPointerCapture(e.pointerId); e.preventDefault(); });
+  card.addEventListener('pointermove', e => {
+    if (!row) return;
+    const others = [...box.children].filter(r => r !== row); let before = null;
+    for (const r of others){ const bb = r.getBoundingClientRect(); if (e.clientY < bb.top + bb.height / 2){ before = r; break; } }
+    if (before !== row.nextElementSibling) box.insertBefore(row, before);
+  });
+  const end = () => { if (!row) return; const ids = [...box.children].map(r => r.dataset.id); row.classList.remove('drag'); row = null; box = null; tdReorder(ids); };
+  card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
+})();
+// ---- the to-do editor: name, list, due date and time, star, note, subtasks ----
+let tdeId = null;
+function openTodoEd(id){
+  tdeId = id || null;
+  const it = id ? store.get('todos', []).find(x => x.id === id) : null, ls = tdLists();
+  $('#tde_title').textContent = it ? 'Edit to-do' : 'New to-do';
+  $('#tde_t').value = it ? it.t : '';
+  $('#tde_lw').style.display = ls.length > 1 ? '' : 'none';
+  $('#tde_list').innerHTML = ls.map(x => '<option value="' + x.id + '">' + esc(x.name) + '</option>').join('');
+  $('#tde_list').value = it ? tdListOf(it, ls) : (tdSel !== 'all' ? tdSel : 'main');
+  $('#tde_d').value = it && it.due || ''; $('#tde_tm').value = it && it.dt || '';
+  const on = !!(it && it.star); $('#tde_star').classList.toggle('on', on); $('#tde_star').setAttribute('aria-pressed', on);
+  $('#tde_note').value = it && it.note || '';
+  tdeSteps.set(it && it.steps);
+  $('#tde_err').hidden = true; $('#tde_del').style.display = it ? '' : 'none'; $('#tde_move').style.display = it ? '' : 'none';
+  $('#tdeDlg').showModal(); $('#tdeDlg .ef').scrollTop = 0;
+  if (!it){ $('#tde_t').focus(); setTimeout(() => $('#tde_t').focus(), 80); } else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+function tdeSave(){
+  const err = msg => { $('#tde_err').textContent = msg; $('#tde_err').hidden = false; };
+  const t = $('#tde_t').value.trim(); if (!t){ err('Give the to-do a name.'); return; }
+  const due = $('#tde_d').value, dt = $('#tde_tm').value;
+  if (dt && !due){ err('Pick a date for that time, or clear the time.'); return; }
+  const l = store.get('todos', []); let it = tdeId ? l.find(x => x.id === tdeId) : null;
+  if (!it){ it = { id:'t' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), done:false }; l.push(it); }
+  const put = (k, v) => { if (v) it[k] = v; else delete it[k]; };
+  it.t = t; it.l = $('#tde_lw').style.display === 'none' ? (it.l || (tdSel !== 'all' ? tdSel : 'main')) : $('#tde_list').value;
+  put('due', due); put('dt', due ? dt : ''); put('star', $('#tde_star').classList.contains('on') ? true : undefined);
+  put('note', $('#tde_note').value.trim());
+  const st = tdeSteps.get(); if (st.length) it.steps = st; else delete it.steps;
+  store.set('todos', l); $('#tdeDlg').close(); drawTodo();
+}
+$('#tde_ok').onclick = tdeSave;
+$('#tde_x').onclick = () => $('#tdeDlg').close();
+$('#tde_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); tdeSave(); } });
+$('#tde_star').onclick = () => { const on = !$('#tde_star').classList.contains('on'); $('#tde_star').classList.toggle('on', on); $('#tde_star').setAttribute('aria-pressed', on); };
+$('#tde_chips').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const q = b.dataset.q;
+  if (q === 'nd'){ $('#tde_d').value = ''; $('#tde_tm').value = ''; }
+  else if (q === 'nt') $('#tde_tm').value = '';
+  else { const d = parseDay(todayStr()); d.setDate(d.getDate() + +q); $('#tde_d').value = isoLocal(d); }
+  $('#tde_err').hidden = true;
+});
+// Send to Timeline: opens the task editor with this to-do filled in. The to-do leaves the list only when that task is saved.
+$('#tde_tl').onclick = () => {
+  if (!tdeId) return;
+  const t = $('#tde_t').value.trim(); if (!t){ $('#tde_err').textContent = 'Give the to-do a name.'; $('#tde_err').hidden = false; return; }
+  const due = $('#tde_d').value, tm = tdMin($('#tde_tm').value), note = $('#tde_note').value.trim(), steps = tdeSteps.get().map(s => s.t), id = tdeId;
+  $('#tdeDlg').close(); setTab('home');
+  if (due && due >= todayStr() && due !== viewDate) goDate(due);        // schedule it on its due day
+  openEd('oo', null, defaultWin(), due && tm !== null ? tm : undefined);
+  $('#e_t').value = t; $('#e_details').value = note; edSteps.set(steps); cur.fromTodo = id;
+};
+$('#tde_inbox').onclick = async () => {
+  if (!tdeId) return;
+  const t = $('#tde_t').value.trim(); if (!t){ $('#tde_err').textContent = 'Give the to-do a name.'; $('#tde_err').hidden = false; return; }
+  const lose = $('#tde_d').value || $('#tde_note').value.trim() || tdeSteps.get().length;
+  if (lose && !await ask('Inbox tasks keep only a name, so the date, note and subtasks would be dropped. Move it anyway?', { ok:'Move to Inbox' })) return;
+  const _s = grab(), id = tdeId;
+  const ib = store.get('inbox', []); ib.push({ id:'i' + Date.now().toString(36), t }); store.set('inbox', ib);
+  store.set('todos', store.get('todos', []).filter(x => x.id !== id));
+  $('#tdeDlg').close(); drawTodo(); drawInbox(); showUndo('Moved to Inbox', _s);
+};
+$('#tde_del').onclick = () => {
+  if (!tdeId) return; const _s = grab(); store.set('todos', store.get('todos', []).filter(x => x.id !== tdeId)); $('#tdeDlg').close(); drawTodo(); showUndo('To-do removed', _s);
+};
+// ---- list names ----
+let tdlEdit = null;
+function openListDlg(id){
+  tdlEdit = id; const it = id ? tdLists().find(x => x.id === id) : null;
+  $('#tdl_title').textContent = it ? 'Edit list' : 'New list'; $('#tdl_t').value = it ? it.name : '';
+  $('#tdl_del').hidden = !it || id === 'main';
+  $('#tdlDlg').showModal(); $('#tdl_t').focus(); setTimeout(() => $('#tdl_t').focus(), 80);
+}
+function tdlSave(){
+  const v = $('#tdl_t').value.trim(); if (!v) return;
+  const ls = tdLists(), it = tdlEdit ? ls.find(x => x.id === tdlEdit) : null;
+  if (it) it.name = v; else { const id = 'l' + Date.now().toString(36); ls.push({ id, name:v }); tdSel = id; }
+  store.set('todoLists', ls); $('#tdlDlg').close(); drawTodo();
+}
+$('#tdl_ok').onclick = tdlSave;
+$('#tdl_x').onclick = () => $('#tdlDlg').close();
+$('#tdl_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); tdlSave(); } });
+$('#tdl_del').onclick = () => {
+  const id = tdlEdit; if (!id || id === 'main') return;
+  const _s = grab(), ls = tdLists().filter(x => x.id !== id), t = store.get('todos', []);
+  t.forEach(x => { if (x.l === id) x.l = 'main'; });       // the to-dos are kept: they move to the first list
+  store.set('todos', t); store.set('todoLists', ls); tdSel = 'all'; $('#tdlDlg').close(); drawTodo(); showUndo('List deleted. Its to-dos moved to ' + ls[0].name, _s);
+};
 
 function energyHtml(H){
   const wr = {};
@@ -1724,6 +1948,24 @@ $('#icsF').addEventListener('change', e => {
   rd.readAsText(f); e.target.value = '';
 });
 applyLook();
+
+// ---- welcome cards (first run, after a reset, and from About) ----
+let welFlow = false, welIdx = 0;
+function welGo(i){
+  const t = $('#wl_track'), n = t.children.length; welIdx = Math.max(0, Math.min(n - 1, i));
+  $('#wl_dots').innerHTML = Array.from({ length:n }, (_, k) => '<i' + (k === welIdx ? ' class="on"' : '') + '></i>').join('');
+  $('#wl_next').textContent = welIdx === n - 1 ? (welFlow ? 'Get started' : 'Done') : 'Next';
+  $('#wl_skip').hidden = welIdx === n - 1;
+}
+function openWelcome(flow){
+  welFlow = !!flow; $('#welDlg').showModal(); $('#wl_track').scrollLeft = 0; welGo(0);
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+$('#wl_track').addEventListener('scroll', () => { const t = $('#wl_track'), i = Math.round(t.scrollLeft / Math.max(1, t.clientWidth)); if (i !== welIdx) welGo(i); });
+$('#wl_next').onclick = () => { const t = $('#wl_track'); if (welIdx >= t.children.length - 1) $('#welDlg').close(); else t.scrollTo({ left:(welIdx + 1) * t.clientWidth, behavior:'smooth' }); };
+$('#wl_skip').onclick = () => $('#welDlg').close();
+$('#welDlg').addEventListener('close', () => { if (welFlow){ welFlow = false; store.set('welcomed', true); openSetup(); } });
+document.addEventListener('click', e => { if (e.target.id === 'replayWel') openWelcome(false); });
 
 // ---- first-run setup ----
 function openSetup(){
@@ -1963,7 +2205,7 @@ function toast(msg, label, fn){
 setInterval(() => { if (toastUntil && Date.now() > toastUntil + 300) hideToast(); }, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && toastUntil && Date.now() >= toastUntil) hideToast(); });
 $('#toast').addEventListener('click', e => { if (e.target.id !== 'toastBtn') hideToast(); });
-const UNDO_KEYS = ['blocks', 'ovr', 'plans', 'inbox', 'taskNotes', 'hist', 'wins', 'wovr'];
+const UNDO_KEYS = ['blocks', 'ovr', 'plans', 'inbox', 'todos', 'todoLists', 'todoPrefs', 'taskNotes', 'hist', 'wins', 'wovr'];
 function grab(){ const s = {}; UNDO_KEYS.forEach(k => { s[k] = store.raw(k); }); return s; }
 function showUndo(msg, s){
   toast(msg, 'Undo', () => {
@@ -2285,7 +2527,7 @@ $('#clrHist').addEventListener('click', clearHist);
 function drawHdr(){
   const t = document.body.dataset.tab || 'home', d = parseDay(viewDate), el = $('#hdrTitle'); if (!el) return;
   if (t === 'home') el.innerHTML = esc(d.toLocaleDateString(undefined, { month:'long' })) + ' <em>' + d.getFullYear() + '</em>';
-  else el.textContent = ({ inbox:'Inbox', history:'History', settings:'Settings' })[t] || 'Yotei';
+  else el.textContent = ({ inbox:'Inbox', todo:'To-do', history:'History', settings:'Settings' })[t] || 'Yotei';
 }
 function dayColors(ds){
   let rows = [];
@@ -2302,7 +2544,7 @@ function dayColors(ds){
 $('#fab').innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 $('#fab').addEventListener('click', () => {
   const inbox = '<svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4zM4 13h5l1 2h4l1-2h5"/></svg>';
-  $('#fabMenu .fabIn').innerHTML = [['add', ICONS.pen, 'Add a task'], ['inbox', inbox, 'Add to inbox'], ['late', ICONS.alarm, day.shift ? 'Pushed ' + day.shift.by + ' min later' : 'Running late?'], ['copy', ICONS.calendar, 'Copy this day to another date']]
+  $('#fabMenu .fabIn').innerHTML = [['add', ICONS.pen, 'Add a task'], ['inbox', inbox, 'Add to inbox'], ['todo', '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg>', 'Add a to-do'], ['late', ICONS.alarm, day.shift ? 'Pushed ' + day.shift.by + ' min later' : 'Running late?'], ['copy', ICONS.calendar, 'Copy this day to another date']]
     .map(a => '<button data-a="' + a[0] + '">' + a[1] + '<span>' + a[2] + '</span></button>').join('');
   $('#fabMenu').showModal();
 });
@@ -2312,6 +2554,7 @@ $('#fabMenu').addEventListener('click', e => {
   $('#fabMenu').close();
   if (b.dataset.a === 'add'){ openEd('oo', null, defaultWin()); cur.addScope = true; drawEdTypes(); }
   else if (b.dataset.a === 'inbox') openInboxComposer();
+  else if (b.dataset.a === 'todo'){ setTab('todo'); openTodoEd(null); }
   else if (b.dataset.a === 'late') openShift();
   else openMv('day');
 });
@@ -2330,7 +2573,7 @@ $('#clr_go').onclick = async () => {
 // SAFETY, ACCESSIBILITY, EMPTY STATE
 // ============================================================
 function safeCol(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.trim())) ? c.trim() : null; }
-Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks', msgDlg:'Message' })
+Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', welDlg:'Welcome to Yotei', qaDlg:'Quick add', tdlDlg:'To-do list', tdeDlg:'To-do', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks', msgDlg:'Message' })
   .forEach(([id, l]) => { const d = document.getElementById(id); if (d) d.setAttribute('aria-label', l); });
 $('#tl').insertAdjacentHTML('beforebegin', '<div class="sleep emptyCard" id="emptyCard" hidden><h2>Start with your first task</h2><p class="wn">Add what you want to do today. A task added for all days repeats every day. You can use the + button any time.</p><button class="add" id="emptyAdd">Add a task</button></div>');
 function drawEmpty(){
@@ -2345,18 +2588,18 @@ function focusNow(){ if (viewDate !== todayStr()) return; const r = document.que
   const list = a => a.map(x => '<li>' + esc(x) + '</li>').join('');
   const sect = (n, a) => a && a.length ? '<h3>' + n + '</h3><ul>' + list(a) + '</ul>' : '';
   $('#tab-settings').insertAdjacentHTML('beforeend',
-    '<div class="sleep about"><h2>About Yotei <span class="ver">v' + APP_VERSION + '</span></h2><p>Status: stable. Everything below is working.</p><p class=\"wn\">Icons: Phosphor, and Font Awesome Free (CC BY 4.0, fontawesome.com).</p><h3 style="font:700 12px Poppins,sans-serif;color:var(--text)">Features</h3><ul>' + list(FEATURES) + '</ul><h3 style="font:700 12px Poppins,sans-serif;color:var(--text)">Good to know</h3><ul>' + list(LIMITS) + '</ul></div>' +
+    '<div class="sleep about"><h2>About Yotei <span class="ver">v' + APP_VERSION + '</span></h2><p>Status: stable. Everything below is working.</p><p class=\"wn\">Icons: Phosphor, and Font Awesome Free (CC BY 4.0, fontawesome.com).</p><p class=\"wn\">Yotei was inspired by <b>Structured</b>. Much of its look and layout (the timeline, week strip, Inbox and add button) comes from that app, with thanks.</p><button class=\"add\" id=\"replayWel\" type=\"button\">Show the welcome tour</button><h3 style="font:700 12px Poppins,sans-serif;color:var(--text)">Features</h3><ul>' + list(FEATURES) + '</ul><h3 style="font:700 12px Poppins,sans-serif;color:var(--text)">Good to know</h3><ul>' + list(LIMITS) + '</ul></div>' +
     '<div class="sleep about"><h2>Changelog</h2>' + CHANGELOG.map((c, i) =>
       '<details class="clog"' + (i === 0 ? ' open' : '') + '><summary>v' + esc(c.v) + '<span>' + esc(c.date) + '</span></summary>' + sect('Added', c.added) + sect('Changed', c.changed) + sect('Fixed', c.fixed) + '</details>').join('') + '</div>');
 })();
 const tabs = document.querySelectorAll('.tabs button');
 // ---- Android back button (only wired up inside the Android app) ----
-const BACK_ORDER = ['msgDlg', 'scopeDlg', 'iconPick', 'colorSheet', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
+const BACK_ORDER = ['msgDlg', 'tdlDlg', 'tdeDlg', 'qaDlg', 'welDlg', 'scopeDlg', 'iconPick', 'colorSheet', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
 function handleBack(){
   for (const id of BACK_ORDER){
     const d = document.getElementById(id);
     if (!d || !d.open) continue;
-    const x = id === 'fabMenu' ? null : d.querySelector('#sc_x,#ip_x,#mv_x,#snap_x,#sh_x,#clr_x,#runClose,#ss_close,#e_x');
+    const x = id === 'fabMenu' ? null : d.querySelector('#tdl_x,#tde_x,#qa_x,#wl_skip,#sc_x,#ip_x,#mv_x,#snap_x,#sh_x,#clr_x,#runClose,#ss_close,#e_x');
     if (x) x.click(); else d.close();
     return true;
   }
@@ -2371,6 +2614,7 @@ function setTab(t){
   document.querySelectorAll('.tab').forEach(sec => { sec.hidden = sec.id !== 'tab-' + t; sec.setAttribute('role', 'tabpanel'); });
   store.set('tab', t); document.body.dataset.tab = t; drawHdr();
   if (t === 'settings') setPageOpen(null);      // tapping Settings always shows the menu
+  if (t === 'todo') drawTodo();                 // due labels follow the clock
 }
 tabs.forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 setTab('home');          // always start on the Timeline
@@ -2382,7 +2626,7 @@ migrateV3();
 { const b = store.get('blocks', null); if (b){ const r = normalizeIds(b); if (r.changed) store.set('blocks', r.blocks); } }
 render();
 // a dialog opens above everything, so the Welcome dialog waits until the loading screen has gone
-if (FRESH){ if (document.getElementById('boot')) window.__afterBoot = openSetup; else openSetup(); }
+if (FRESH){ if (document.getElementById('boot')) window.__afterBoot = () => openWelcome(true); else openWelcome(true); }
 setTimeout(focusNow, 150);
 (function(){
   const a = new URLSearchParams(location.search).get('action'); if (!a) return;
@@ -2523,7 +2767,7 @@ function buildSettings(){
     });
     menu.appendChild(box);
   });
-  tab.appendChild(menu); pages.forEach(p => tab.appendChild(p));
+  tab.appendChild(menu); menu.insertAdjacentHTML('beforeend', '<p class="setCredit">Inspired by Structured</p>'); pages.forEach(p => tab.appendChild(p));
   all.filter(c => c.parentElement === tab).forEach(c => { c.hidden = true; });   // anything not placed above stays out of the way
   tab.addEventListener('click', e => {
     const r = e.target.closest('.setRow'); if (r){ setPageOpen(r.dataset.page); return; }

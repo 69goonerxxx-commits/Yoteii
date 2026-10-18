@@ -2,6 +2,26 @@
 
 Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 entry in `about.js`.
 
+## 3.1.1 (built in phases; later phases add to this entry)
+- Phase 1, To-do tab: lists (`todoLists`: { id, name }, `main` always exists and cannot be deleted; a to-do's `l` is its list, missing means main), chips row with All and +, #tdlDlg to add, rename and delete a list (deleting moves its to-dos to the first list, with Undo). Quick-add shows a list picker when there is more than one list.
+- Star (`star: true`) floats a to-do into its own group above the others. Drag handle (.tdH) reorders inside a group by rewriting the group's slots in the `todos` array (tdReorder). Handles only show with the My order sort.
+- `todoPrefs` { sort: mine|az|new, done: bool }: Sort select, and the Done (n) header toggles the finished group. Clear done only clears the current view. validate.js knows todoLists and todoPrefs; both are in UNDO_KEYS.
+- Phase 2, To-do editor (#tdeDlg, openTodoEd) replaces the quick-add box for to-dos; #qaDlg is Inbox only now. A to-do can carry `due` (YYYY-MM-DD), `dt` (HH:MM, only with a due date), `note`, and `steps` ([{ t, d }], each with its own done flag, unlike task steps, which keep done state per day). tdDue gives the label and the overdue flag (date passed, or today with a time that has passed).
+- Groups on the list: starred, overdue (not starred), the rest, then done. Sort gains Due date. Tapping the subtask badge or note icon (tdOpen, in memory) opens the subtasks and note under the to-do; subtasks can be ticked there.
+- Subtask rows were made into makeSteps() so the task editor and the to-do editor share one implementation.
+- Phase 3: #tde_tl (Send to Timeline) closes the to-do editor, switches to the Timeline, jumps to the due day when it is today or later, and opens the one-off editor with the name, note (as Details) and subtasks filled in; the due time becomes the Start time. It sets cur.fromTodo, and #e_ok removes the to-do only when the task is saved, so cancelling loses nothing. #tde_inbox moves the to-do to the Inbox (name only, asks first when a date, note or subtasks would be dropped; Undo).
+- One-offs scheduled from the Inbox or a to-do carry `src` ('inbox' | 'todo'). The engine already spreads block fields into rows, so rowHtml shows a "from Inbox" / "from To-do" tag next to the other tags. `src` survives later edits because it is not in the editor's FORM list.
+
+## 3.1
+- Inbox: layout copied from the original (38px icon, short title, one New Inbox Task button). The inline composer is gone; New Inbox Task and the + menu open #qaDlg, a dialog pinned near the top, so the keyboard cannot resize the page. Text has side padding.
+- To-do tab (tab-todo, key `todos`, items { id, t, done }): plain checklist between Inbox and Timeline, shared #qaDlg for add and edit, undo on delete and Clear done. Added to UNDO_KEYS, validate.js and the + menu.
+- Subtasks: #e_steps rows (add one at a time, drag handle, remove, Enter adds the next, Backspace on an empty row removes it). Stored as the same `steps` array as before.
+- Notes: saving a note no longer adds it to shownNotes, so notes stay hidden until the note icon is tapped.
+- Welcome tour: #welDlg (4 swipeable cards). Shown on a fresh start, then the setup dialog follows. About has a Show the welcome tour button.
+- Credit to Structured in About, the Settings menu footer and the last welcome card.
+- Loading screen logo: 62vw up to 260px (was 42vw up to 170px).
+- Version 3.1 (package.json 3.1.0), cache yotei-v3-1.
+
 ## 3.0.4
 - Inbox: the composer no longer collapses on blur (that closed it under the keyboard on Android). It has a close button and Esc.
 - Energy: tapping today's chosen level again removes that rating.

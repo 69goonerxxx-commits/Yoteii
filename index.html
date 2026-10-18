@@ -13,7 +13,7 @@
 /* Loading screen: the five dots from the app icon, rippling */
 #boot{position:fixed;inset:0;z-index:2147483000;background:#0a1226;display:flex;align-items:center;justify-content:center;transition:opacity .35s ease}
 #boot.out{opacity:0;pointer-events:none}
-#boot svg{width:min(42vw,170px);height:auto;overflow:visible}
+#boot svg{width:min(62vw,260px);height:auto;overflow:visible}
 #boot .bd{transform-box:fill-box;transform-origin:center;animation:bootDot 1.3s ease-in-out infinite}
 #boot .d2{animation-delay:.14s}#boot .d3{animation-delay:.28s}#boot .d4{animation-delay:.42s}#boot .d5{animation-delay:.56s}
 @keyframes bootDot{0%,70%,100%{transform:scale(1);opacity:.45}35%{transform:scale(1.45);opacity:1}}
@@ -133,6 +133,7 @@
 <div class="app">
   <div class="top"><h1 id="hdrTitle">Yotei</h1><div class="hdrR"><div class="dateWrap hdrCal"><button class="date" id="dateBtn" aria-label="Pick a date"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></button><input type="date" id="datePick" aria-label="Pick a date" tabindex="-1"></div></div><span id="date" class="srOnly"></span><span id="clk"></span><button id="editDone" type="button" aria-label="Done editing">Done</button><button id="settingsBtn" aria-label="Settings">⚙</button></div>
   <section id="tab-inbox" class="tab" hidden></section>
+  <section id="tab-todo" class="tab" hidden><div class="qcard" id="todoCard"></div></section>
   <section id="tab-home" class="tab">
     <div class="weekstrip" id="weekstrip"></div>
     <button class="add" id="todayBtn" hidden>Back to today</button>
@@ -185,6 +186,7 @@
 
   <nav class="tabs" role="tablist">
     <button data-tab="inbox" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4zM4 13h5l1 2h4l1-2h5"/></svg></span><span>Inbox</span></button>
+    <button data-tab="todo" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg></span><span>To-do</span></button>
     <button data-tab="home" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></span><span>Timeline</span></button>
     <button data-tab="history" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span>History</span></button>
     <button data-tab="settings" role="tab"><span class="ti"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></span><span>Settings</span></button>
@@ -213,7 +215,7 @@
   <label class="taskOnly" id="e_typesWrap" style="display:none">Day types<div class="chips" id="e_types"></div></label>
   <div class="er winOnly"><label>Starts<input id="e_bs" type="time"></label><label>Ends<input id="e_be" type="time"></label></div>
   <label><span id="e_dlab">Details</span><textarea id="e_details" rows="2" placeholder="What this task is, or how to do it"></textarea></label>
-  <label class="taskOnly">Subtasks, one per line<textarea id="e_p" rows="3"></textarea></label>
+  <div class="taskOnly sdWrap" id="e_stepsWrap"><span class="sdLab">Subtasks <em id="e_stepsN"></em></span><div id="e_steps"></div><button type="button" id="e_stepAdd" class="sdAdd">+ Add subtask</button></div>
   <p class="edErr" id="e_err" role="alert" hidden></p>
   <div class="ea"><button id="e_del">Delete</button><button id="e_up">Up</button><button id="e_dn">Down</button><button id="e_x">Cancel</button><button id="e_ok">Save</button></div>
 </div></dialog>
@@ -279,6 +281,39 @@
   <button class="add" id="clr_exp">Export a backup first</button>
   <label class="chk"><input type="checkbox" id="clr_ok"> I understand this deletes everything</label>
   <div class="ea"><button id="clr_x">Cancel</button><button id="clr_go" class="danger" disabled>Clear data</button></div>
+</div></dialog>
+<dialog id="qaDlg"><div class="ef">
+  <h2 id="qa_title">New task</h2>
+  <input id="qa_t" maxlength="80" autocomplete="off" aria-label="Task">
+  <div class="ea"><button type="button" id="qa_x">Cancel</button><button type="button" id="qa_ok">Add</button></div>
+</div></dialog>
+<dialog id="tdeDlg"><div class="ef">
+  <h2 id="tde_title">New to-do</h2>
+  <input id="tde_t" maxlength="80" autocomplete="off" placeholder="What needs doing?" aria-label="To-do">
+  <label id="tde_lw">List<select id="tde_list"></select></label>
+  <div class="er"><label>Due date<input id="tde_d" type="date"></label><label>Time (optional)<input id="tde_tm" type="time"></label></div>
+  <div class="chips" id="tde_chips"><button type="button" data-q="0">Today</button><button type="button" data-q="1">Tomorrow</button><button type="button" data-q="7">Next week</button><button type="button" data-q="nd">No date</button><button type="button" data-q="nt">No time</button></div>
+  <div class="chips"><button type="button" id="tde_star" aria-pressed="false">&#9733; Starred</button></div>
+  <label>Note<textarea id="tde_note" rows="2" placeholder="Anything worth remembering"></textarea></label>
+  <div class="sdWrap"><span class="sdLab">Subtasks <em id="tde_stepsN"></em></span><div id="tde_steps"></div><button type="button" id="tde_stepAdd" class="sdAdd">+ Add subtask</button></div>
+  <div class="chips" id="tde_move"><button type="button" id="tde_tl">Send to Timeline</button><button type="button" id="tde_inbox">Move to Inbox</button></div>
+  <p class="edErr" id="tde_err" role="alert" hidden></p>
+  <div class="ea"><button type="button" id="tde_del" class="danger">Delete</button><button type="button" id="tde_x">Cancel</button><button type="button" id="tde_ok">Save</button></div>
+</div></dialog>
+<dialog id="tdlDlg"><div class="ef">
+  <h2 id="tdl_title">New list</h2>
+  <input id="tdl_t" maxlength="24" autocomplete="off" placeholder="List name" aria-label="List name">
+  <div class="ea"><button type="button" id="tdl_del" class="danger">Delete list</button><button type="button" id="tdl_x">Cancel</button><button type="button" id="tdl_ok">Save</button></div>
+</div></dialog>
+<dialog id="welDlg"><div class="wlIn">
+  <div class="wlTrack" id="wl_track">
+    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg></div><h2>Welcome to Yotei</h2><p>A daily schedule that flows from your wake time. Tell Yotei when you wake up and it lays out your whole day for you.</p></section>
+    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></div><h2>Blocks and tasks</h2><p>Your day is split into blocks of time. Add tasks to a block, say how long they take and whether they can shrink when time is short. For each block, choose Home, School or Away.</p></section>
+    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h2>Running late? It adapts</h2><p>Tasks shrink or move to fit the day, and fixed-time tasks stay put. Free gaps show a + Add task button, and Running late in the + menu pushes the rest of your day.</p></section>
+    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4zM4 13h5l1 2h4l1-2h5"/></svg></div><h2>Capture, then tick off</h2><p>The Inbox holds thoughts you have not scheduled yet, and the To-do tab is a simple checklist. Tick tasks as you go, and see how you are doing in History.</p><p class="wlCredit">Yotei was inspired by Structured.</p></section>
+  </div>
+  <div class="wlDots" id="wl_dots" aria-hidden="true"></div>
+  <div class="ea"><button type="button" id="wl_skip">Skip</button><button type="button" id="wl_next">Next</button></div>
 </div></dialog>
 <dialog id="setupDlg"><div class="ef">
   <h2>Welcome to Yotei</h2>

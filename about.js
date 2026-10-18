@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.0.4';
+export const APP_VERSION = '3.1.1';
 export const FEATURES = [
   'A daily timeline built from your wake time, split into seven energy windows',
   'Morning and Night Routines that shrink (optional, then flexible, then core) to fit',
@@ -10,7 +10,7 @@ export const FEATURES = [
   'History and trends for the last 90 days',
   'Run mode that counts you through a routine step by step',
   'Streaks, a weekly view, routine templates and reminders',
-  'One-off tasks and an inbox for things that happen once',
+  'One-off tasks, an Inbox for unscheduled thoughts, and a To-do tab for a plain checklist',
   'Edit a task for one day, from a day onward, or for all days, with weekday and mode limits',
   'Undo, drag and drop, usual day types, energy check-ins and a weekly review',
   'Move, copy, copy a whole day, or push the day later when running late',
@@ -25,6 +25,35 @@ export const LIMITS = [
   'Calendar import is a one-time copy of timed events, not a live sync'
 ];
 export const CHANGELOG = [
+  { v:'3.1.1', date:'Oct 2026',
+    added:[
+      'To-do lists: chips at the top (All plus your own lists) with a + to add one, and Edit list to rename or delete it',
+      'Star a to-do and it floats to the top of its list',
+      'Drag a to-do by its handle to reorder it, inside the starred group or the rest',
+      'Sort by my order, due date, A to Z or newest first, and tap Done to show or hide finished to-dos',
+      'A to-do editor with a due date and optional time (with Today, Tomorrow and Next week buttons), a star, a note and subtasks',
+      'Overdue to-dos show a red date and sit above the rest, and due dates read Today, Tomorrow or Yesterday',
+      'Tap the subtask count or note icon on a to-do to open its subtasks and note, and tick subtasks right in the list',
+      'Send to Timeline from a to-do: it opens the task editor with the name, note and subtasks filled in (and the due day and time, if set). The to-do leaves the list once you save the task',
+      'Move to Inbox from a to-do, with Undo',
+      'Tasks that came from the Inbox or the To-do list show a small "from Inbox" or "from To-do" tag on the timeline'
+    ] },
+  { v:'3.1', date:'Oct 2026',
+    added:[
+      'A To-do tab between Inbox and Timeline: a plain checklist you can tick off, edit, delete and clear when done',
+      'A short welcome tour for new users, and again after the app is reset or its data is cleared. You can replay it from About',
+      'Subtasks in the editor are now rows: add one at a time, drag the handle to reorder, remove with the cross, and see how many you have',
+      'Credit to Structured, the app that inspired Yotei, in About, Settings and the welcome tour'
+    ],
+    changed:[
+      'Inbox looks like the original: a small icon, a short title and one New Inbox Task button',
+      'Adding to the Inbox opens a small box at the top of the screen, so the keyboard no longer pushes the page around',
+      'The loading screen logo is bigger',
+      'Saving a note no longer opens it on the timeline. Notes stay hidden until you tap the note icon'
+    ],
+    fixed:[
+      'More space around the Inbox text so it no longer touches the screen edges'
+    ] },
   { v:'3.0.4', date:'Oct 2026',
     added:[
       'Weekly review in History: tasks done this week, a bar for each day, the average energy under each bar, your best day and your best window',

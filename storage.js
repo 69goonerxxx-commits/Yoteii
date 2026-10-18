@@ -186,7 +186,7 @@ export async function makeSnapshot(reason){
   return rec.id;
 }
 
-const hasUserData = () => ['blocks', 'plans', 'hist', 'inbox'].some(k => cache.has(k));
+const hasUserData = () => ['blocks', 'plans', 'hist', 'inbox', 'todos'].some(k => cache.has(k));
 const dayOf = t => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 
 // Once per day, on the first launch: save what the previous day left behind, before any edits.
