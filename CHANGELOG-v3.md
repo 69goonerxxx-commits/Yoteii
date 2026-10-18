@@ -1,6 +1,17 @@
-# Yotei v3.0.3 (3.0.0 notes below)
+# Yotei v3.0.4 (3.0.0 notes below)
 
 Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 entry in `about.js`.
+
+## 3.0.4
+- Inbox: the composer no longer collapses on blur (that closed it under the keyboard on Android). It has a close button and Esc.
+- Energy: tapping today's chosen level again removes that rating.
+- Loading screen: dots r=7 (was 14), 6 seconds in the app. android-prepare.mjs patches AppTheme.NoActionBarLaunch (only when its parent is Theme.SplashScreen) with a plain #0A1226 background and a transparent icon.
+- Blocks: new default colour and icon per window; the editor colours are a 6-column grid of 16 colours, Auto and the custom wheel.
+- Task start and end dates can be edited in the task editor. They are applied to the task itself (and its linked copies), not as day-limited overrides, and are not shown on the timeline.
+- Export and the automatic weekly backup go to Downloads/Yotei (YoteiFiles.saveToDownloads, MediaStore). trimBackups keeps the latest 8 yotei-auto-* files. Toggle under Settings > Backup.
+- Reminders get Done and Snooze 10 min (action buttons). Done marks that task done for that day; Snooze schedules another notification in 10 minutes and remSync leaves snoozed ones alone.
+- Weekly review (review.js, weekSummary) at the top of History.
+- Week strip: no empty dots row until something is planned.
 
 ## 3.0.3
 - Loading screen: #boot in index.html, the icon's ring, check and five dots, with the dots rippling. It leaves when main.js has drawn the first screen (the Android app keeps it up for at least 2 seconds, the website does not wait). The Welcome dialog waits until it has gone, because a dialog opens above everything.

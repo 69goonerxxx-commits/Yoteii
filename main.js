@@ -1,3 +1,4 @@
+import { weekSummary } from './review.js';
 import { esc } from './util.js';
 import { validateBackup } from './validate.js';
 import { TASK_LISTS, sameId, normalizeIds, removeTask, removeFromRecord } from './tasks.js';
@@ -227,8 +228,8 @@ function dotBg(color, frac){
 }
 const COLOR_SWATCHES = ['#f59e0b','#fbbf24','#facc15','#38bdf8','#fb7185','#a78bfa','#6366f1','#22c55e','#f97316','#eef2ff'];
 const WIN_STYLE = {
-  sleep:{ c:'#f59e0b', i:'sun' }, climb1:{ c:'#fbbf24', i:'sun' }, peak:{ c:'#facc15', i:'sun' },
-  trough:{ c:'#38bdf8', i:'cloud' }, climb2:{ c:'#fb7185', i:'sunset' }, wmz:{ c:'#a78bfa', i:'cloud' }, wind:{ c:'#6366f1', i:'moon' }
+  sleep:{ c:'#f59e0b', i:'sunrise' }, climb1:{ c:'#f97316', i:'mountain' }, peak:{ c:'#facc15', i:'brain' },
+  trough:{ c:'#38bdf8', i:'coffee' }, climb2:{ c:'#34d399', i:'rocket' }, wmz:{ c:'#a78bfa', i:'eye' }, wind:{ c:'#6366f1', i:'moon' }
 };
 function typeOf(k){ return typeOfIn(day.types, k, WIN); }
 function schedule(){
@@ -369,6 +370,7 @@ function openEd(l, id, w, startAt){
   endDriven = false; $('#e_s').value = st !== undefined ? toVal(st) : ''; $('#e_e').value = '';
   syncEnd(); refreshWinLock(); applyKindUI();
   $('#e_days').style.display = l === 'oo' ? 'none' : '';
+  $('#e_dates').style.display = l === 'oo' ? 'none' : ''; $('#e_from').value = x.from || ''; $('#e_to').value = x.to || '';
   drawEdTypes();
   $('#e_details').value = x.details || ''; $('#e_p').value = (x.steps || []).join('\n');
   edDays = x.days ? x.days.slice() : [0,1,2,3,4,5,6]; drawDays();
@@ -741,6 +743,12 @@ $('#e_ok').onclick = () => {
   const icon = $('#e_icon').value.trim(); if (icon) b.icon = icon;
   const steps = $('#e_p').value.split('\n').map(z => z.trim()).filter(Boolean); if (steps.length) b.steps = steps;
   if (cur.l !== 'oo'){ if (!edDays.length){ edErr('Pick at least one day.'); return; } if (edDays.length < 7) b.days = edDays.slice().sort(); }
+  if (cur.l !== 'oo'){
+    const f0 = $('#e_from').value, t0 = $('#e_to').value;
+    if (f0 && t0 && t0 < f0){ edErr('The end date is before the start date.'); return; }
+    if (f0) b.from = f0; else delete b.from;
+    if (t0) b.to = t0; else delete b.to;
+  }
   const d = Math.max(0, parseInt($('#e_d').value) || 0), m = parseInt($('#e_m').value);
   if (k === 'sug'){ b.sug = true; b.d = 0; }
   else {
@@ -795,7 +803,26 @@ function historyDayInner(h){
   }).join('');
   return (tp ? '<p class="wn">' + tp + '</p>' : '') + (h.note ? '<p class="hl">Note: ' + esc(h.note) + '</p>' : '') + groups;
 }
-function trendsHtml(){
+function weekReviewHtml(){
+  const H = store.get('hist', {}), WB = wins(), days = [];
+  for (let i = 6; i >= 0; i--){
+    const d = parseDay(todayStr()); d.setDate(d.getDate() - i); const ds = isoLocal(d);
+    let planned = 0, dn = 0;
+    if (ds === todayStr()){ const t = remRowsFor(ds); const rs = t.rows.filter(r => r.use > 0 && !r.sug); planned = rs.length; dn = rs.filter(r => t.done.includes(r.id)).length; }
+    else if (H[ds]){ const rs = (H[ds].rows || []).filter(r => r.u > 0 || r.done); planned = rs.length; dn = rs.filter(r => r.done).length; }
+    days.push({ ds, planned, done:dn });
+  }
+  const S = weekSummary(days, store.get('energy', []));
+  if (!S.planned) return '<div class="sleep weekCard"><h2>Your week</h2><p class="wn">Plan a few tasks and tick them off. Your week shows up here.</p></div>';
+  const dl = ds => parseDay(ds).toLocaleDateString(undefined, { weekday:'long' });
+  const cols = S.perDay.map(x => '<div class="wkCol"><div class="wkBar"><i style="height:' + (x.pct || 0) + '%"></i></div>' + (x.energy ? '<b class="wkDot" style="background:' + EN_COL[Math.round(x.energy) - 1] + '"></b>' : '<b class="wkDot none"></b>') + '<span>' + parseDay(x.ds).toLocaleDateString(undefined, { weekday:'narrow' }) + '</span></div>').join('');
+  const lines = [];
+  if (S.best) lines.push('Best day: ' + dl(S.best.ds) + ' (' + S.best.pct + '%).');
+  if (S.energyAvg) lines.push('Energy averaged ' + S.energyAvg.toFixed(1) + ' out of 5' + (S.bestWindow && WB[S.bestWindow.w] ? ', best in ' + esc(WB[S.bestWindow.w].name) + '.' : '.'));
+  return '<div class="sleep weekCard"><h2>Your week</h2><p class="wkBig"><b>' + S.done + '</b> of ' + S.planned + ' tasks done <span>' + S.pct + '%</span></p><div class="wkBars">' + cols + '</div>' + lines.map(l => '<p class="wn">' + l + '</p>').join('') + '<p class="wn wkKey">Bars show tasks done. The dot under each is that day\'s average energy.</p></div>';
+}
+function trendsHtml(){ return weekReviewHtml() + trendsBody(); }
+function trendsBody(){
   const H = store.get('hist', {}), days = Object.keys(H).sort((a, b) => cmpDay(b, a)).slice(0, 7).reverse();
   if (!days.length) return '<p class="wn">Not enough history yet for trends.</p>';
   const dayRows = days.map(d => {
@@ -826,13 +853,13 @@ function drawNav(){
   const d = parseDay(viewDate);
   $('#date').innerHTML = '<b>' + d.toLocaleDateString(undefined, { weekday:'long' }) + '</b><span class="dacc">' + d.toLocaleDateString(undefined, { month:'long', day:'numeric', year:'numeric' }) + '</span>';
   const base = mondayOf(viewDate), todayDS = todayStr();
-  let strip = '';
+  let strip = '', anyDots = false;
   for (let i = 0; i < 7; i++){
     const wd = new Date(base); wd.setDate(base.getDate() + i);
     const ds = isoLocal(wd), sel = ds === viewDate, isToday = ds === todayDS;
-    strip += '<button class="wd' + (sel ? ' on' : '') + (isToday ? ' today' : '') + '" data-d="' + ds + '"><span class="wdn">' + wd.toLocaleDateString(undefined, { weekday:'short' }) + '</span><span class="wdd">' + wd.getDate() + '</span><span class="wdots">' + dayColors(ds).map(c => '<i style="--c:' + c + '"></i>').join('') + '</span></button>';
+    strip += '<button class="wd' + (sel ? ' on' : '') + (isToday ? ' today' : '') + '" data-d="' + ds + '"><span class="wdn">' + wd.toLocaleDateString(undefined, { weekday:'short' }) + '</span><span class="wdd">' + wd.getDate() + '</span><span class="wdots">' + dayColors(ds).map(c => { anyDots = true; return '<i style="--c:' + c + '"></i>'; }).join('') + '</span></button>';
   }
-  $('#weekstrip').innerHTML = strip;
+  $('#weekstrip').innerHTML = strip; $('#weekstrip').classList.toggle('nodots', !anyDots);      // no empty row of dots when nothing is planned
   $('#datePick').value = isoLocal(d);
   $('#todayBtn').hidden = viewDate === todayStr();
   $('#liveBtn').hidden = !snapMode();
@@ -1104,7 +1131,7 @@ $('#msgDlg').addEventListener('close', () => { const r = mdResolve; mdResolve = 
 // ============================================================
 // Backup files keep the v2 layout (keys carry the yotei_v2_ prefix), so they stay readable by older versions.
 function backupData(){ const o = {}; Object.entries(store.dump()).forEach(([k, v]) => { o['yotei_v2_' + k] = v; }); return o; }
-// In the Android app a page cannot download a file by itself. Export saves straight into the Downloads folder through a small piece of
+// In the Android app a page cannot download a file by itself. Export saves straight into Downloads/Yotei through a small piece of
 // native code (YoteiFiles). Share keeps using Android's share sheet. If the native part is missing, Export falls back to the share sheet.
 async function shareBackupNative(name, json){
   const fs = nativePlugin('Filesystem'), sh = nativePlugin('Share'); if (!fs || !sh) return false;
@@ -1118,11 +1145,36 @@ async function shareBackupNative(name, json){
 async function saveBackupNative(name, json){
   const yf = nativePlugin('YoteiFiles');
   if (yf){
-    try{ await yf.saveToDownloads({ name, data:json, mime:'application/json' }); store.set('lastBackup', Date.now()); updateBackupInfo(); toast('Saved to your Downloads folder'); return true; }
+    try{ await yf.saveToDownloads({ name, data:json, mime:'application/json' }); store.set('lastBackup', Date.now()); updateBackupInfo(); toast('Saved to Downloads/Yotei'); return true; }
     catch(e){ /* fall through to the share sheet */ }
   }
   return shareBackupNative(name, json);
 }
+
+// ---- automatic weekly backup (the Android app): one file a week in Downloads/Yotei, the latest 8 are kept ----
+const AUTO_DAYS = 7, AUTO_KEEP = 8;
+const autoBackupOn = () => store.get('autoBackup', true) !== false;
+async function autoBackupMaybe(){
+  if (!IS_NATIVE || !autoBackupOn()) return;
+  const yf = nativePlugin('YoteiFiles'); if (!yf) return;
+  if (Date.now() - store.get('lastAutoBackup', 0) < AUTO_DAYS * 864e5) return;
+  if (!Object.keys(store.get('hist', {})).length && !Object.keys(store.get('plans', {})).length) return;      // nothing worth saving yet
+  try{
+    await yf.saveToDownloads({ name:'yotei-auto-' + todayStr() + '.json', data:backupJson(), mime:'application/json' });
+    store.set('lastAutoBackup', Date.now()); store.set('lastBackup', Date.now()); updateBackupInfo(); drawAutoBackup();
+    try{ await yf.trimBackups({ prefix:'yotei-auto-', keep:AUTO_KEEP }); }catch{}
+  }catch{}
+}
+function drawAutoBackup(){
+  const box = $('#abBox'); if (!box) return;
+  box.hidden = !IS_NATIVE; if (!IS_NATIVE) return;
+  const on = autoBackupOn(), t = store.get('lastAutoBackup', 0);
+  $('#abInfo').textContent = 'Export saves into Downloads/Yotei. ' + (on ? 'Automatic weekly backup is on' + (t ? ' (last one ' + new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ')' : '') + ', keeping the latest ' + AUTO_KEEP + '.' : 'Automatic weekly backup is off.');
+  $('#abToggle').textContent = on ? 'Turn off automatic backup' : 'Turn on automatic backup';
+}
+$('#abToggle').addEventListener('click', () => { store.set('autoBackup', !autoBackupOn()); drawAutoBackup(); if (autoBackupOn()) autoBackupMaybe(); });
+drawAutoBackup();
+if (IS_NATIVE) setTimeout(autoBackupMaybe, 4000);
 async function exportData(){
   if (await saveBackupNative('yotei-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify({ app:'yotei', v:3, data:backupData() }))) return;
   const o = backupData();
@@ -1413,7 +1465,7 @@ function remPlan(R){
       const at = parseDay(ds); at.setHours(0, r.start - R.lead, 0, 0);
       if (at.getTime() <= now + 2000) return;
       let id = remId(ds + '|' + r.id + '|' + r.start); while (id === REM_TEST_ID || seen.has(id)) id++; seen.add(id);
-      out.push({ id, at, title: R.lead ? r.t + ' in ' + R.lead + ' min' : 'Time for ' + r.t, body: range(r.start, r.end) });
+      out.push({ id, at, ds, rid: r.id, t: r.t, title: R.lead ? r.t + ' in ' + R.lead + ' min' : 'Time for ' + r.t, body: range(r.start, r.end) });
     });
   }
   return out.sort((a, b) => a.at - b.at).slice(0, 60);
@@ -1423,6 +1475,29 @@ function remSoon(force){
   if (force) remSig = null;
   clearTimeout(remTimer); remTimer = setTimeout(remSync, 2500);
 }
+const REM_ACTIONS = 'TASK';
+async function remActions(LN){ try{ await LN.registerActionTypes({ types:[{ id:REM_ACTIONS, actions:[{ id:'done', title:'Done' }, { id:'snooze', title:'Snooze 10 min' }] }] }); }catch{} }
+function markDoneFor(ds, id){
+  const sv = { vd:viewDate, wake, day, done };
+  try{ viewDate = ds; loadDay(ds); if (!done.ids.includes(id)) done.ids.push(id); saveDay(); }
+  finally{ viewDate = sv.vd; wake = sv.wake; day = sv.day; done = sv.done; }
+  render();
+}
+async function onNotifAction(ev){
+  const LN = nativePlugin('LocalNotifications'), n = ev && ev.notification, ex = (n && n.extra) || {};
+  if (!LN || !ex.ds || !ex.rid) return;
+  try{ await LN.cancel({ notifications:[{ id:n.id }] }); }catch{}
+  if (ev.actionId === 'done'){ markDoneFor(ex.ds, ex.rid); remSoon(true); toast('Marked done: ' + (ex.t || 'task')); }
+  else if (ev.actionId === 'snooze'){
+    const at = new Date(Date.now() + 10 * 60000), id = remId('snz|' + ex.ds + '|' + ex.rid + '|' + at.getTime());
+    try{
+      await remChannel(LN); await remActions(LN);
+      await LN.schedule({ notifications:[{ id, title:(ex.t || 'Task'), body:'Snoozed for 10 minutes', channelId:REM_CHANNEL, actionTypeId:REM_ACTIONS, extra:ex, schedule:{ at, allowWhileIdle:true } }] });
+      store.set('snz', store.get('snz', []).filter(s => s.at > Date.now()).concat({ id, at:at.getTime() })); toast('Snoozed for 10 minutes');
+    }catch{}
+  }
+}
+if (IS_NATIVE){ const LN0 = nativePlugin('LocalNotifications'); if (LN0 && LN0.addListener) try{ LN0.addListener('localNotificationActionPerformed', onNotifAction); }catch{} }
 async function remChannel(LN){ await LN.createChannel({ id:REM_CHANNEL, name:'Task reminders', description:'Tells you when a task is about to start', importance:4, vibration:true }); }
 async function remSync(){
   const LN = nativePlugin('LocalNotifications'); if (!LN) return;
@@ -1433,11 +1508,12 @@ async function remSync(){
     const ok = R.on && (await LN.checkPermissions()).display === 'granted';
     const plan = ok ? remPlan(R) : [], sig = plan.map(p => p.id + '@' + p.at.getTime() + p.title).join('|');
     if (sig === remSig) return;
-    const old = ((await LN.getPending()).notifications || []).filter(n => n.id !== REM_TEST_ID).map(n => ({ id: n.id }));
+    const snz = new Set(store.get('snz', []).filter(s => s.at > Date.now()).map(s => s.id));      // snoozed reminders stay
+    const old = ((await LN.getPending()).notifications || []).filter(n => n.id !== REM_TEST_ID && !snz.has(n.id)).map(n => ({ id: n.id }));
     if (old.length) await LN.cancel({ notifications: old });
     if (plan.length){
-      await remChannel(LN);
-      await LN.schedule({ notifications: plan.map(p => ({ id: p.id, title: p.title, body: p.body, channelId: REM_CHANNEL, schedule: { at: p.at, allowWhileIdle: true } })) });
+      await remChannel(LN); await remActions(LN);
+      await LN.schedule({ notifications: plan.map(p => ({ id: p.id, title: p.title, body: p.body, channelId: REM_CHANNEL, actionTypeId: REM_ACTIONS, extra: { ds: p.ds, rid: p.rid, t: p.t }, schedule: { at: p.at, allowWhileIdle: true } })) });
     }
     remSig = sig;
   }catch{}
@@ -1481,7 +1557,7 @@ function remCheck(){
   if (ch) store.set('remSent', S);
 }
 setInterval(remCheck, 15000);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible'){ remCheck(); if (IS_NATIVE){ remNativeState(); remSoon(); } } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible'){ remCheck(); if (IS_NATIVE){ remNativeState(); remSoon(); autoBackupMaybe(); } } });
 if (IS_NATIVE){ remNativeState(); remSoon(true); }
 $('#tab-settings').insertAdjacentHTML('beforeend',
   '<div class="sleep" id="remCard">' + remCard() + '</div>' +
@@ -1548,7 +1624,7 @@ function drawInbox(){
   const el = $('#inboxCard'); if (!el) return;
   const keep = $('#inT') ? $('#inT').value : '', list = store.get('inbox', []);
   const btn = '<button class="inNew" id="inNew"' + (inOpen ? ' hidden' : '') + '>' + IN_PLUS + '<span>New Inbox Task</span></button>';
-  const comp = '<div class="inRow" id="inComposer"' + (inOpen ? '' : ' hidden') + '><input id="inT" placeholder="Add a task" maxlength="80" aria-label="New inbox task"><button id="inAdd">Add</button></div>';
+  const comp = '<div class="inRow" id="inComposer"' + (inOpen ? '' : ' hidden') + '><input id="inT" placeholder="Add a task" maxlength="80" aria-label="New inbox task"><button id="inAdd">Add</button><button id="inCancel" aria-label="Close" type="button">&times;</button></div>';
   const items = list.map(x => '<div class="inItem"><span>' + esc(x.t) + '</span><span class="inAct"><button data-sch="' + x.id + '">Schedule</button><button data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></span></div>').join('');
   el.innerHTML = list.length
     ? btn + comp + '<div class="inList">' + items + '</div>'
@@ -1559,6 +1635,7 @@ function openInboxComposer(){ setTab('inbox'); inOpen = true; drawInbox(); setTi
 $('#inboxCard').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'inNew'){ openInboxComposer(); return; }
+  if (b.id === 'inCancel'){ inOpen = false; $('#inT').value = ''; drawInbox(); return; }
   if (b.id === 'inAdd'){
     const v = $('#inT').value.trim(); if (!v) return;
     const l = store.get('inbox', []); l.push({ id:'i' + Date.now().toString(36), t:v }); store.set('inbox', l);
@@ -1571,8 +1648,10 @@ $('#inboxCard').addEventListener('click', e => {
   else if (b.id === 'cpDay') openMv('day');
   else if (b.id === 'lateBtn') openShift();
 });
-$('#inboxCard').addEventListener('focusout', e => { if (e.target.id === 'inT' && !e.target.value.trim()) setTimeout(() => { if (inOpen && document.activeElement !== $('#inT') && !$('#inT').value.trim()){ inOpen = false; drawInbox(); } }, 150); });
-$('#inboxCard').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'inT'){ e.preventDefault(); $('#inAdd').click(); } });
+$('#inboxCard').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'inT'){ e.preventDefault(); $('#inAdd').click(); }
+  if (e.key === 'Escape' && e.target.id === 'inT'){ $('#inCancel').click(); }
+});
 
 function energyHtml(H){
   const wr = {};
@@ -1729,7 +1808,7 @@ function applyScope0(sc){
   if (scModes.length && (c.l === 'pre' || c.l === 'night')) filt.modes = scModes.slice();
   const hasFilt = !!(filt.days || filt.modes), push = (id, e) => { (OV[id] = OV[id] || []).push(e); };
   const range_ = sc === 'range' ? { from:scFrom || null, to:scTo || null } : { from:sc === 'all' ? null : iso, to:sc === 'day' ? iso : null };
-  const stamp = o => { if (sc === 'from') o.from = iso; else if (sc === 'range'){ if (scFrom) o.from = scFrom; if (scTo) o.to = scTo; } return o; };   // the dates a new task carries
+  const stamp = o => { if (sc === 'from') o.from = (o.from && o.from > iso) ? o.from : iso; else if (sc === 'range'){ if (scFrom) o.from = scFrom; if (scTo) o.to = scTo; } return o; };   // the dates a new task carries
   if (c.type === 'add'){
     if (sc === 'day'){
       const o = { ...c.b, w:c.w || (c.l === 'pre' ? 'sleep' : c.l === 'night' ? 'wind' : 'climb1') };
@@ -1748,6 +1827,14 @@ function applyScope0(sc){
     else push(c.id, { ...range_, ...filt, patch:null });
   } else {
     const patch = diffBlock(c.old, c.b);
+    const dp = {}; ['from', 'to'].forEach(k => { if (k in patch){ dp[k] = patch[k]; delete patch[k]; } });
+    if (Object.keys(dp).length){                 // start and end dates belong to the task itself, whatever days the rest of the edit covers
+      const bi0 = arr.findIndex(x => sameId(x.id, c.id)), lk0 = bi0 >= 0 ? arr[bi0].lk : null;
+      const put = x => { const nb = { ...x }; Object.keys(dp).forEach(k => { if (dp[k] === null) delete nb[k]; else nb[k] = dp[k]; }); return nb; };
+      if (bi0 >= 0) arr[bi0] = put(arr[bi0]);
+      setBlocks(c.l, arr);
+      if (lk0) WIN_LISTS.forEach(L => { if (L !== c.l) setBlocks(L, clone(getBlocks(L)).map(x => x.lk === lk0 ? put(x) : x)); });
+    }
     if (Object.keys(patch).length){
       if (sc === 'all' && !hasFilt){
         { const bi = arr.findIndex(x => sameId(x.id, c.id)), nb = { ...arr[bi] }; Object.keys(patch).forEach(k => { if (patch[k] === null) delete nb[k]; else nb[k] = patch[k]; }); arr[bi] = nb; } setBlocks(c.l, arr);
@@ -1921,12 +2008,15 @@ function drawEnergy(){
   const T = store.get('energy', []).filter(x => x.d === todayStr()), last = T[T.length - 1];
   const btn = (n, i) => '<button data-en="' + (i + 1) + '" class="' + (last && last.v === i + 1 ? 'on' : '') + '" style="--ec:' + EN_COL[i] + ';--ecb:' + EN_COL[i] + '24" aria-pressed="' + !!(last && last.v === i + 1) + '" aria-label="' + (i + 1) + ', ' + n + '"><span class="enN">' + (i + 1) + '</span><span class="enL">' + n + '</span></button>';
   el.innerHTML = '<h2>How is your energy?</h2><div class="enRow' + (last ? ' has' : '') + '">' + EN_NAMES.map(btn).join('') + '</div>' +
-    (last ? '<p class="wn enNow"><i style="background:' + EN_COL[last.v - 1] + '"></i><b>' + EN_NAMES[last.v - 1] + '</b> at ' + fmt(last.at).join(' ') + '. Tap another to update.</p>'
+    (last ? '<p class="wn enNow"><i style="background:' + EN_COL[last.v - 1] + '"></i><span><b>' + EN_NAMES[last.v - 1] + '</b> at ' + fmt(last.at).join(' ') + '. Tap it again to clear, or tap another to change.</span></p>'
           : '<p class="wn">Tap how you feel right now. A few ratings a day teach Yotei your rhythm.</p>');
 }
 $('#energyCard').addEventListener('click', e => {
   const b = e.target.closest('[data-en]'); if (!b) return;
-  const L = store.get('energy', []); L.push({ v:Number(b.dataset.en), at:nowM(), o:nowM() - wake, w:defaultWin(), d:todayStr() });
+  const L = store.get('energy', []), v = Number(b.dataset.en);
+  let li = -1; for (let i = L.length - 1; i >= 0; i--) if (L[i].d === todayStr()){ li = i; break; }
+  if (li >= 0 && L[li].v === v){ L.splice(li, 1); store.set('energy', L); toast('Energy cleared'); drawEnergy(); return; }     // tapped the chosen level again: clear it
+  L.push({ v, at:nowM(), o:nowM() - wake, w:defaultWin(), d:todayStr() });
   store.set('energy', L.slice(-500)); toast('Energy ' + b.dataset.en + ' saved'); drawEnergy();
 });
 function ratingsHtml(){
@@ -2069,8 +2159,8 @@ function needLive(){
   toast('Rebuilt this day from your current routines so it can be edited.');
   return true;
 }
-const RING = ['#f28b95', '#e9804d', '#fbc531', '#7cb342', '#5b8fc9', '#0f8a5f', '#d94452', '#1565c0', '#ffffff'];
-const RECENT0 = ['#a86c3c', '#8a8a8a', '#31b5d6', '#ffd966', '#5b78b4'];
+const RING = ['#f87171', '#fb923c', '#fbbf24', '#facc15', '#a3e635', '#4ade80', '#2dd4bf', '#22d3ee', '#60a5fa', '#818cf8', '#a78bfa', '#e879f9', '#f472b6', '#fb7185', '#94a3b8', '#f8fafc'];
+const RECENT0 = ['#f97316', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
 const hex2 = n => Math.round(n).toString(16).padStart(2, '0');
 function hsv2hex(h, s, v){
   const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
@@ -2087,7 +2177,7 @@ function drawColorRow(p){
   p = typeof p === 'string' ? p : CT;
   const v = ($('#' + p + '_color').value || '').toLowerCase(), inList = RING.includes(v), custom = v && !inList;
   $('#' + p + '_colors').innerHTML = '<button type="button" class="cring cauto' + (!v ? ' on' : '') + '" data-c="" role="radio" aria-checked="' + !v + '" aria-label="Automatic color">Auto</button>' +
-    RING.map(c => '<button type="button" class="cring' + (v === c ? ' on' : '') + '" data-c="' + c + '" style="--c:' + c + '" role="radio" aria-checked="' + (v === c) + '" aria-label="Color ' + c + '"></button>').join('') +
+    RING.map(c => '<button type="button" class="cring' + (v === c ? ' on' : '') + '" data-c="' + c + '" style="--c:' + c + ';--ck:' + onColor(c) + '" role="radio" aria-checked="' + (v === c) + '" aria-label="Color ' + c + '"></button>').join('') +
     '<button type="button" class="cring ccustom' + (custom ? ' has on' : '') + '" data-custom="1" style="--c:' + (custom ? v : 'transparent') + '" role="radio" aria-checked="' + !!custom + '" aria-label="Pick a custom color"></button>';
 }
 function highlightColor(){ drawColorRow(); }
@@ -2428,5 +2518,5 @@ function buildSettings(){
 }
 buildSettings();
 
-// Loading screen: leave once everything is drawn. In the Android app it stays for at least 2 seconds so the dots are seen.
-window.__bootMin = IS_NATIVE ? 2000 : 0; if (window.__bootOff) window.__bootOff();
+// Loading screen: leave once everything is drawn. In the Android app it stays for at least 6 seconds so the dots are seen.
+window.__bootMin = IS_NATIVE ? 6000 : 0; if (window.__bootOff) window.__bootOff();

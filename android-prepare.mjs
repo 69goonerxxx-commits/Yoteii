@@ -45,6 +45,25 @@ writeFileSync(`${APP}/res/mipmap-anydpi-v26/ic_launcher_round.xml`, adaptive);
 writeFileSync(`${APP}/res/values/ic_launcher_background.xml`, '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0A1226</color>\n</resources>\n');
 console.log('launcher icons written');
 
+// ---- plain launch screen ----
+// Android shows its own icon splash before Yotei starts. Make it a plain colour (the same as the loading screen) with no icon,
+// so the first thing you see is the Yotei dots screen. Only done when the template is the one we expect.
+{
+  const f = `${APP}/res/values/styles.xml`;
+  if (!existsSync(f)) warn('styles.xml not found, so the Android launch screen stays as it is');
+  else {
+    let x = readFileSync(f, 'utf8');
+    const re = /(<style\s+name="AppTheme\.NoActionBarLaunch"\s+parent="Theme\.SplashScreen"[^>]*>)([\s\S]*?)(<\/style>)/;
+    const mm = re.exec(x);
+    if (!mm) warn('launch theme looks different from expected, so the Android launch screen stays as it is');
+    else if (!/windowSplashScreenBackground/.test(mm[2])) {
+      const inner = mm[2].replace(/<item\s+name="android:background">[^<]*<\/item>/, '<item name="android:background">#0A1226</item>');
+      x = x.replace(re, `${mm[1]}\n        <item name="windowSplashScreenBackground">#0A1226</item>\n        <item name="windowSplashScreenAnimatedIcon">@android:color/transparent</item>${inner}${mm[3]}`);
+      writeFileSync(f, x); console.log('plain launch screen set');
+    }
+  }
+}
+
 // ---- native helper: save the backup straight into Downloads ----
 // (a web page inside the app cannot download files, so Export asks this small plugin to write into the Downloads folder.
 //  If anything here looks different from what is expected we skip it, and the app falls back to the share sheet.)
@@ -59,8 +78,11 @@ console.log('launcher icons written');
       writeFileSync(`${dir}/YoteiFilesPlugin.java`, `package ${appId};
 
 import android.annotation.TargetApi;
+import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -94,7 +116,7 @@ public class YoteiFilesPlugin extends Plugin {
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
             values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Yotei");
             Uri uri = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
             if (uri == null) {
                 call.reject("Could not create the file");
@@ -112,6 +134,46 @@ public class YoteiFilesPlugin extends Plugin {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Could not save: " + e.getMessage());
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.Q)
+    @PluginMethod
+    public void trimBackups(PluginCall call) {
+        String prefix = call.getString("prefix");
+        Integer keep = call.getInt("keep", 8);
+        if (prefix == null) {
+            call.reject("Missing prefix");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            call.resolve();
+            return;
+        }
+        try {
+            ContentResolver cr = getContext().getContentResolver();
+            Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            String[] projection = { MediaStore.MediaColumns._ID };
+            String selection = MediaStore.MediaColumns.RELATIVE_PATH + " = ? AND " + MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?";
+            String[] args = { Environment.DIRECTORY_DOWNLOADS + "/Yotei/", prefix + "%" };
+            int removed = 0;
+            try (Cursor c = cr.query(collection, projection, selection, args, MediaStore.MediaColumns.DATE_ADDED + " DESC")) {
+                if (c != null) {
+                    int idCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID);
+                    int n = 0;
+                    while (c.moveToNext()) {
+                        n++;
+                        if (n <= keep) continue;
+                        Uri u = ContentUris.withAppendedId(collection, c.getLong(idCol));
+                        removed += cr.delete(u, null, null);
+                    }
+                }
+            }
+            JSObject ret = new JSObject();
+            ret.put("removed", removed);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not tidy old backups: " + e.getMessage());
         }
     }
 }

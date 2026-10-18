@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.0.3';
+export const APP_VERSION = '3.0.4';
 export const FEATURES = [
   'A daily timeline built from your wake time, split into seven energy windows',
   'Morning and Night Routines that shrink (optional, then flexible, then core) to fit',
@@ -25,6 +25,20 @@ export const LIMITS = [
   'Calendar import is a one-time copy of timed events, not a live sync'
 ];
 export const CHANGELOG = [
+  { v:'3.0.4', date:'Oct 2026',
+    added:[
+      'Weekly review in History: tasks done this week, a bar for each day, the average energy under each bar, your best day and your best window',
+      'Reminders have Done and Snooze 10 min buttons on the notification (the app opens when you tap one)',
+      'Automatic weekly backup in the Android app: a file in Downloads/Yotei, keeping the latest 8. You can turn it off under Settings, Backup',
+      'Edit a task\'s start and end dates in the task editor (they are not shown on the timeline)'],
+    changed:[
+      'Export in the Android app now saves into Downloads/Yotei',
+      'Loading screen: smaller dots, 6 seconds in the app, and Android\'s own icon splash is now a plain colour so the dots screen is the first thing you see',
+      'Every block has its own colour and icon by default (a sunrise, a mountain, a brain, a coffee cup, a rocket, an eye, a moon), and the colour picker is a tidy grid of 16 colours plus the custom wheel',
+      'Tapping the energy level you already chose clears it',
+      'The empty row of dots under the dates is hidden until something is planned'],
+    fixed:[
+      'Inbox: the New Inbox Task box no longer closes by itself when the keyboard opens. It has a close button and Esc closes it'] },
   { v:'3.0.3', date:'Oct 2026',
     added:[
       'Loading screen: the five dots from the app icon ripple while Yotei starts (at least 2 seconds in the Android app)',

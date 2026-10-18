@@ -606,3 +606,35 @@ body.editing #editDone{display:inline-block}
 #tab-settings .setBack{border:0;background:none;color:var(--accent);padding:8px;display:flex;cursor:pointer}
 .setBack svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .setPage[data-n="1"]>.sleep>h2:first-child{display:none}
+
+/* ---- v3.0.4: colour swatches as a tidy grid ---- */
+.colorRow{display:grid;grid-template-columns:repeat(6,1fr);gap:12px 6px;overflow:visible;padding:14px 10px;justify-items:center;scroll-snap-type:none}
+.cring{--ck:#06121f;width:34px;height:34px;border:0;background:var(--c);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);transition:transform .12s}
+.cring.on{transform:scale(1.1);box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--c)}
+.cring.on::after{inset:auto;left:50%;top:50%;width:12px;height:6px;border:0;border-left:2.5px solid var(--ck);border-bottom:2.5px solid var(--ck);background:none;border-radius:0;transform:translate(-50%,-68%) rotate(-45deg)}
+.cring.cauto{background:transparent;border:2px dashed var(--sec);box-shadow:none;font-size:9px}
+.cring.cauto.on{background:var(--card2);border-style:solid;border-color:var(--text);color:var(--text);box-shadow:none}
+.cring.ccustom{background:conic-gradient(#f87171,#fbbf24,#4ade80,#22d3ee,#818cf8,#e879f9,#f87171)}
+.cring.ccustom.has{background:var(--c)}
+:root[data-theme=light] .cring[data-c="#f8fafc"]{box-shadow:inset 0 0 0 1.5px #cbd5e1}
+/* ---- v3.0.4: Inbox box with a close button, and no gap when the keyboard is up ---- */
+#inboxCard .inRow #inCancel{flex:none;width:44px;padding:0;font-size:20px}
+body.kb .inEmpty{min-height:0;padding-top:16px}
+/* ---- v3.0.4: no empty dots row under the dates when nothing is planned ---- */
+#weekstrip.nodots .wdots{display:none}
+
+/* ---- v3.0.4: task dates row in the editor, weekly review ---- */
+#e_dates{margin-top:2px}
+.weekCard .wkBig{font:500 15px 'Poppins',sans-serif;margin:4px 0 10px}
+.weekCard .wkBig b{font-size:26px;font-weight:700}
+.weekCard .wkBig span{float:right;color:var(--accent);font-weight:600}
+.wkBars{display:flex;gap:8px;align-items:flex-end;margin:6px 0 10px}
+.wkCol{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.wkBar{width:100%;height:64px;background:var(--card2);border-radius:8px;display:flex;align-items:flex-end;overflow:hidden}
+.wkBar i{display:block;width:100%;background:var(--accent);border-radius:8px 8px 0 0}
+.wkDot{width:8px;height:8px;border-radius:50%}
+.wkDot.none{background:var(--line)}
+.wkCol span{font-size:11px;color:var(--sec)}
+.weekCard .wkKey{font-size:11px;margin-top:6px}
+#energyCard .enNow{align-items:flex-start}
+#energyCard .enNow i{margin-top:5px}
