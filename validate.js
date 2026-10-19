@@ -15,7 +15,7 @@ const CHECKS = {
   hist: v => isObj(v) && Object.values(v).every(h => isObj(h) && (h.rows === undefined || (arrOfObj(h.rows) && h.rows.every(r => optStr(r, 't') && optNum(r, 's') && optNum(r, 'e') && optNum(r, 'u')))) && (h.note === undefined || typeof h.note === 'string')),
   ovr: v => isObj(v) && Object.values(v).every(arrOfObj),
   inbox: v => arrOfObj(v) && v.every(i => optStr(i, 't')),
-  todos: v => arrOfObj(v) && v.every(i => optStr(i, 't') && optStr(i, 'l') && optStr(i, 'due') && optStr(i, 'dt') && optStr(i, 'note') && optStr(i, 'rep') && (i.tags === undefined || (Array.isArray(i.tags) && i.tags.every(g => typeof g === 'string'))) && (i.steps === undefined || (Array.isArray(i.steps) && i.steps.every(s => isObj(s) && optStr(s, 't')))) && (i.done === undefined || typeof i.done === 'boolean') && (i.star === undefined || typeof i.star === 'boolean')),
+  todos: v => arrOfObj(v) && v.every(i => optStr(i, 't') && optStr(i, 'l') && optStr(i, 'due') && optStr(i, 'dt') && optStr(i, 'note') && optStr(i, 'rep') && optStr(i, 'ic') && optStr(i, 'c') && (i.tags === undefined || (Array.isArray(i.tags) && i.tags.every(g => typeof g === 'string'))) && (i.steps === undefined || (Array.isArray(i.steps) && i.steps.every(s => isObj(s) && optStr(s, 't')))) && (i.done === undefined || typeof i.done === 'boolean') && (i.star === undefined || typeof i.star === 'boolean')),
   todoLists: v => arrOfObj(v) && v.every(i => optStr(i, 'id') && optStr(i, 'name') && optStr(i, 'ic') && optStr(i, 'c')),
   todoTags: v => arrOfObj(v) && v.every(i => optStr(i, 'id') && optStr(i, 'name') && optStr(i, 'c')),
   todoPrefs: isObj,

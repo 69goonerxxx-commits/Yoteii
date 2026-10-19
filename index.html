@@ -291,7 +291,8 @@
 </div></dialog>
 <dialog id="tdeDlg"><div class="ef">
   <h2 id="tde_title">New to-do</h2>
-  <input id="tde_t" maxlength="80" autocomplete="off" placeholder="What needs doing?" aria-label="To-do">
+  <div class="taskRow"><input id="tde_t" maxlength="80" autocomplete="off" placeholder="What needs doing?" aria-label="To-do"><button type="button" id="tde_iconBtn" class="iconPreview" aria-label="Choose icon">+</button><input type="hidden" id="tde_icon"></div>
+  <label>Colour<div class="colorRow" id="tde_colors" role="radiogroup" aria-label="Colour"></div><input type="hidden" id="tde_color"></label>
   <label id="tde_lw">List<select id="tde_list"></select></label>
   <div class="er"><label>Due date<input id="tde_d" type="date"></label><label>Time (optional)<input id="tde_tm" type="time"></label></div>
   <div class="chips" id="tde_chips"><button type="button" data-q="0">Today</button><button type="button" data-q="1">Tomorrow</button><button type="button" data-q="7">Next week</button><button type="button" data-q="nd">No date</button><button type="button" data-q="nt">No time</button></div>
@@ -309,6 +310,12 @@
   <div class="taskRow"><input id="tdl_t" maxlength="24" autocomplete="off" placeholder="List name" aria-label="List name"><button type="button" id="tdl_iconBtn" class="iconPreview" aria-label="Choose icon">+</button><input type="hidden" id="tdl_icon"></div>
   <label>Colour<div class="colorRow" id="tdl_colors" role="radiogroup" aria-label="Colour"></div><input type="hidden" id="tdl_color"></label>
   <div class="ea"><button type="button" id="tdl_del" class="danger">Delete list</button><button type="button" id="tdl_x">Cancel</button><button type="button" id="tdl_ok">Save</button></div>
+</div></dialog>
+<dialog id="dtDlg"><div class="ef">
+  <h2 id="dt_title">New day type</h2>
+  <input id="dt_t" maxlength="14" autocomplete="off" placeholder="Name, like Work" aria-label="Day type name">
+  <p class="edErr" id="dt_err" role="alert" hidden></p>
+  <div class="ea"><button type="button" id="dt_del" class="danger">Delete</button><button type="button" id="dt_x">Cancel</button><button type="button" id="dt_ok">Save</button></div>
 </div></dialog>
 <dialog id="tgDlg"><div class="ef">
   <h2 id="tg_title">New tag</h2>

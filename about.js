@@ -31,7 +31,13 @@ export const CHANGELOG = [
       'Eight accent colours (Blue, Teal, Green, Amber, Orange, Red, Pink and Purple) that work with every theme, 48 combinations in all',
       'Every list has its own icon and colour, picked from the same icons and colour ring as tasks. They show on the list chip, on the card edge and in the calendar dots',
       'Tags for to-dos: add several to a to-do, give each tag a colour, share them across every list, and tap a tag to filter. Edit or delete a tag from the Tags row',
-      'Tap the loading screen to skip it once the app has loaded'
+      'Tap the loading screen to skip it once the app has loaded',
+      'Day types: Work and Sick come ready-made next to Home, School and Away. Add your own, rename them or delete them in Settings > Schedule > Day types. They appear in every block, in Usual days and when you add tasks',
+      'Filter the to-do list by several tags at once. A to-do must have every tag you pick',
+      'Every to-do can have its own icon and colour. The icon shows beside its name, the colour is its card edge, and both come along with Send to Timeline'
+    ],
+    fixed:[
+      'In the to-do editor, Save, Cancel and Delete now stay at the bottom of the screen instead of being hidden below the fold'
     ],
     changed:[
       'Text on buttons and highlights now picks black or white to stay readable on whichever accent colour you choose'

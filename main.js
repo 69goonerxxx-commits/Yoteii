@@ -303,7 +303,7 @@ function migrateFields(){
 function getBlocks(l){
   if (l === 'oo') return day.oneoffs || [];
   const b = store.get('blocks', null);
-  return b && b[l] ? b[l] : (l === 'pre' ? PRE : l === 'night' ? NIGHT : MODES[l].post);
+  return b && b[l] ? b[l] : (l === 'pre' ? PRE : l === 'night' ? NIGHT : (MODES[l] || MODES.home).post);
 }
 function setBlocks(l, arr){ if (l === 'oo'){ day.oneoffs = arr; saveDay(); return; } const b = store.get('blocks', null) || {}; b[l] = arr; store.set('blocks', b); }
 // ============================================================
@@ -390,6 +390,17 @@ function edErr(msg){ const e = $('#e_err'); e.textContent = msg; e.hidden = fals
 // Day types: which of Home / School / Away a task is added to. A task in several types is saved as one copy per type,
 // tied together by a shared link key (lk), so editing one updates the others.
 const WIN_LISTS = ['home', 'school', 'away'];
+// Custom day types. Home, School and Away are built in; Work and Sick come ready-made and can be renamed or deleted, and you can add more.
+const BUILTIN_TYPES = { home:'Home', school:'School', away:'Away' };
+function dayTypes(){ const s = store.get('dayTypes', null); return Array.isArray(s) ? s.filter(x => x && x.id && x.name) : [{ id:'work', name:'Work' }, { id:'sick', name:'Sick' }]; }
+function syncTypes(){        // rebuild every list the app keeps of day types, in place so the rest of the code sees the change
+  Object.keys(MODE_LABEL).forEach(k => { delete MODE_LABEL[k]; });
+  Object.assign(MODE_LABEL, BUILTIN_TYPES);
+  dayTypes().forEach(t => { MODE_LABEL[t.id] = t.name; MODE_NAME[t.id] = t.name; if (!MODES[t.id]) MODES[t.id] = { deadline:null, msg:'', post:[] }; });
+  WIN_LISTS.length = 0; Object.keys(MODE_LABEL).forEach(k => WIN_LISTS.push(k));
+  TASK_LISTS.length = 0; ['pre', 'night'].concat(WIN_LISTS).forEach(k => TASK_LISTS.push(k));
+}
+syncTypes();
 let edTypes = null, edTypesOrig = null;   // null = not chosen yet, show the default
 const newTaskId = n => 'u' + Date.now().toString(36) + (n || 0) + Math.random().toString(36).slice(2, 5);
 function linkedTypes(l, b){ return !b.lk ? [l] : WIN_LISTS.filter(L => L === l || getBlocks(L).some(x => x.lk && x.lk === b.lk)); }
@@ -1010,7 +1021,7 @@ function draw(){
     if (k !== 'sleep' && k !== 'wind'){
       const bypassColor = started ? st.c : 'var(--graydot)';
       const modeKeys = Object.keys(MODE_LABEL).filter(m => !(k === 'wmz' && m === 'school'));
-      html += '<div class="modeWrap"><div class="mode" style="box-shadow:0 0 0 4px var(--bg),0 0 0 7px ' + bypassColor + '" role="group" aria-label="Where you are during ' + esc(WB[k].name) + '">' + modeKeys.map(m => '<button data-w="' + k + '" data-m="' + m + '"' + (t === m ? ' class="on"' : '') + '>' + MODE_LABEL[m] + '</button>').join('') + '</div></div>';
+      html += '<div class="modeWrap"><div class="mode' + (modeKeys.length > 4 ? ' many' : '') + '" style="box-shadow:0 0 0 4px var(--bg),0 0 0 7px ' + bypassColor + '" role="group" aria-label="Where you are during ' + esc(WB[k].name) + '">' + modeKeys.map(m => '<button data-w="' + k + '" data-m="' + m + '"' + (t === m ? ' class="on"' : '') + '>' + MODE_LABEL[m] + '</button>').join('') + '</div></div>';
     }
     if ((k === 'sleep' || k === 'wind') && isToday && rs.some(r => r.use > 0 && !r.sug && !done.ids.includes(r.id))) html += '<button class="add runBtn" data-run="' + k + '">Start ' + esc(WB[k].name.toLowerCase()) + '</button>';
     if (k === 'sleep' || k === 'wind' || t || rs.length){
@@ -1746,19 +1757,19 @@ const TD_COLORS = ['#5e96cb', '#22c55e', '#f59e0b', '#ec4899', '#a78bfa', '#14b8
 const TD_NEW = ['#4ade80', '#fbbf24', '#f472b6', '#a78bfa', '#2dd4bf', '#fb923c', '#f87171', '#60a5fa'];   // colours offered first to new lists and tags
 function tdListColor(l, i){ return (l && l.c) || (l && l.id === 'main' ? '' : TD_COLORS[i % TD_COLORS.length]) || ''; }   // '' means the app accent
 function tdLc(id, lists){ const i = Math.max(0, lists.findIndex(z => z.id === id)); return tdListColor(lists[i], i) || 'var(--accent)'; }
-let tdTag = null;        // the tag the list is filtered by
+let tdTags = [];        // the tags the list is filtered by: a to-do must have all of them
 const TD_CAL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>';
 const TD_SECS = [['late', 'Overdue'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['upcoming', 'Upcoming'], ['none', 'No date']];
 function drawTodo(){
   const el = $('#todoCard'); if (!el) return;
-  const tgAll = store.get('todoTags', []); if (tdTag && !tgAll.some(t => t.id === tdTag)) tdTag = null;
+  const tgAll = store.get('todoTags', []); tdTags = tdTags.filter(id => tgAll.some(t => t.id === id));
   const TGM = {}; tgAll.forEach(t => { TGM[t.id] = t; });
   const lists = tdLists(); if (tdSel !== 'all' && !tdIsSmart(tdSel) && !lists.some(x => x.id === tdSel)) tdSel = 'all';
-  const P = tdPrefs(), all = store.get('todos', []), view = all.filter(x => tdIn(x, tdSel, lists) && (!tdTag || (x.tags || []).includes(tdTag))), isList = lists.some(x => x.id === tdSel), showCal = P.mode === 'cal' && !tdIsSmart(tdSel);
+  const P = tdPrefs(), all = store.get('todos', []), view = all.filter(x => tdIn(x, tdSel, lists) && tdTags.every(id => (x.tags || []).includes(id))), isList = lists.some(x => x.id === tdSel), showCal = P.mode === 'cal' && !tdIsSmart(tdSel);
   const nameOf = id => (lists.find(x => x.id === id) || lists[0]).name;
   const chips = '<div class="tdChipsW"><div class="tdChips" role="tablist" aria-label="Lists">' + [{ id:'all', name:'All' }].concat(TD_SMART.map(z => ({ id:z[0], name:z[1], sv:true })), lists.map(l => ({ id:l.id, name:l.name, lst:true, lc:tdLc(l.id, lists), ic:iconMarkup(l.ic || 'checklist') }))).map(x => '<button type="button" role="tab" class="tdChip' + (x.id === tdSel ? ' on' : '') + '" data-ls="' + x.id + '" aria-selected="' + (x.id === tdSel) + '"' + (x.lst ? ' style="--lc:' + x.lc + '"' : '') + '>' + (x.lst ? '<i class="tdCi">' + x.ic + '</i>' : '') + esc(x.name) + (x.sv ? '<span class="tdCn">' + all.filter(z => !z.done && tdIn(z, x.id, lists)).length + '</span>' : '') + '</button>').join('') + '</div><button type="button" class="tdChip tdAddL" data-ls="+" aria-label="New list">+</button></div>';
   const btn = '<button class="inNew" id="tdNew">' + IN_PLUS + '<span>New To-do</span></button>';
-  const tgRow = tgAll.length ? '<div class="tgFilter"><span class="tgLab">Tags</span>' + tgAll.map(t => '<button type="button" class="tgChip' + (t.id === tdTag ? ' on' : '') + '" data-tf="' + t.id + '" aria-pressed="' + (t.id === tdTag) + '" style="--tc:' + (t.c || 'var(--accent)') + '">#' + esc(t.name) + '</button>').join('') + '<button type="button" class="tdLink" data-tn="1">+ New</button>' + (tdTag ? '<button type="button" class="tdLink" data-te="1">Edit tag</button>' : '') + '</div>' : '';
+  const tgRow = tgAll.length ? '<div class="tgFilter"><span class="tgLab">Tags</span>' + tgAll.map(t => '<button type="button" class="tgChip' + (tdTags.includes(t.id) ? ' on' : '') + '" data-tf="' + t.id + '" aria-pressed="' + tdTags.includes(t.id) + '" style="--tc:' + (t.c || 'var(--accent)') + '">#' + esc(t.name) + '</button>').join('') + '<button type="button" class="tdLink" data-tn="1">+ New</button>' + (tdTags.length === 1 ? '<button type="button" class="tdLink" data-te="1">Edit tag</button>' : '') + (tdTags.length ? '<button type="button" class="tdLink" data-tc="1">Clear</button>' : '') + '</div>' : '';
   if (!view.length && !showCal){
     el.innerHTML = chips + tgRow + '<div class="inEmpty"><div class="inIcon">' + IN_CHECK + '</div><h2>' + (tdSel === 'all' ? 'Your To-do List' : esc(tdName(tdSel, lists))) + '</h2><p class="wn">' + (tdSel === 'all' ? 'A simple checklist for things to get done. Add a date if it has a deadline, and tick them off as you go.' : 'Nothing here yet.') + '</p>' + btn + (isList ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
     return;
@@ -1772,7 +1783,7 @@ function drawTodo(){
   const sortFn = P.sort === 'az' ? (a, b) => a.t.localeCompare(b.t) : P.sort === 'new' ? (a, b) => String(b.id).localeCompare(String(a.id)) : null;
   const arrange = a => sortFn ? a.slice().sort(sortFn) : a;
   const row = (x, canDrag) => {
-    const lc = tdLc(tdListOf(x, lists), lists);
+    const lc = x.c || tdLc(tdListOf(x, lists), lists);        // a to-do's own colour wins over its list's
     const di = tdDue(x), st = Array.isArray(x.steps) ? x.steps : [], nd = st.filter(s => s.d).length, ex = tdOpen.has(x.id) && (st.length || x.note);
     const lst = lists.find(z => z.id === tdListOf(x, lists)) || lists[0], tagTxt = lists.length > 1 && !isList ? '<span class="tdTag" style="--lc:' + lc + '"><i class="tdCi">' + iconMarkup(lst.ic || 'checklist') + '</i>' + esc(lst.name) + '</span>' : '';
     const tgs = (x.tags || []).filter(id => TGM[id]).map(id => '<span class="tgChip" style="--tc:' + (TGM[id].c || 'var(--accent)') + '">#' + esc(TGM[id].name) + '</span>').join('');
@@ -1781,7 +1792,7 @@ function drawTodo(){
       (st.length ? exBtn(TD_STEP, nd + '/' + st.length, 'Subtasks, ' + nd + ' of ' + st.length + ' done') : '') + (x.note ? exBtn(TD_NOTE, '', 'Note') : '') + tagTxt;
     const exp = ex ? '<div class="tdExp">' + st.map((s, i) => '<button type="button" class="tdStp' + (s.d ? ' done' : '') + '" data-sg="' + x.id + '" data-si="' + i + '"><span class="tdSc"></span><span>' + esc(s.t) + '</span></button>').join('') + (x.note ? '<div class="tdNote">' + esc(x.note) + '</div>' : '') + '</div>' : '';
     return '<div class="tdItem' + (x.done ? ' done' : '') + '" data-id="' + x.id + '" style="--lc:' + lc + '"><button class="tdChk" data-tg="' + x.id + '" aria-pressed="' + (x.done ? 'true' : 'false') + '" aria-label="' + (x.done ? 'Mark not done: ' : 'Mark done: ') + esc(x.t) + '"></button>' +
-      '<div class="tdMain"><button class="tdTxt" data-ed="' + x.id + '">' + esc(x.t) + '</button>' + (meta ? '<div class="tdMeta">' + meta + '</div>' : '') + (tgs ? '<div class="tdTags">' + tgs + '</div>' : '') + exp + '</div>' +
+      '<div class="tdMain"><button class="tdTxt" data-ed="' + x.id + '">' + (x.ic ? '<i class="tdIc" style="color:' + lc + '">' + iconMarkup(x.ic) + '</i>' : '') + esc(x.t) + '</button>' + (meta ? '<div class="tdMeta">' + meta + '</div>' : '') + (tgs ? '<div class="tdTags">' + tgs + '</div>' : '') + exp + '</div>' +
       ((!x.done || (canDrag && !x.done)) ? '<div class="tdSide">' + (x.done ? '' : '<button class="tdStar' + (x.star ? ' on' : '') + '" data-st="' + x.id + '" aria-pressed="' + (x.star ? 'true' : 'false') + '" aria-label="' + (x.star ? 'Remove star: ' : 'Star: ') + esc(x.t) + '">' + TD_STAR + '</button>') + (!x.done && canDrag ? '<span class="tdH" aria-label="Drag to reorder" title="Drag to reorder">&#8942;&#8942;</span>' : '') + '</div>' : '') + '</div>';
   };
   const grp = (a, g, canDrag) => a.length ? '<div class="tdList" data-grp="' + g + '">' + a.map(x => row(x, canDrag)).join('') + '</div>' : '';
@@ -1817,7 +1828,7 @@ function tdCalHtml(view, grp, lists){
   for (let i = 0; i < lead; i++) cells.push('<span class="calC off"></span>');
   for (let d = 1; d <= dim; d++){
     const iso = isoLocal(new Date(y, mo, d)), its = byDay[iso] || [], open = its.filter(x => !x.done);
-    const dots = open.slice(0, 3).map(x => '<i style="background:' + (x.due < td ? 'var(--bad)' : tdLc(tdListOf(x, lists), lists)) + '"></i>').join('');
+    const dots = open.slice(0, 3).map(x => '<i style="background:' + (x.due < td ? 'var(--bad)' : x.c || tdLc(tdListOf(x, lists), lists)) + '"></i>').join('');
     cells.push('<button type="button" class="calC' + (iso === td ? ' today' : '') + (iso === tdCalDay ? ' sel' : '') + '" data-cd="' + iso + '" aria-pressed="' + (iso === tdCalDay) + '" aria-label="' + esc(parseDay(iso).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' })) + ', ' + open.length + ' to do"><b>' + d + '</b><span class="calD">' + dots + '</span></button>');
   }
   const head = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(n => '<span>' + n + '</span>').join('');
@@ -1832,9 +1843,10 @@ function tdCalHtml(view, grp, lists){
 $('#todoCard').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.ls){ if (b.dataset.ls === '+') openListDlg(null); else { tdSel = b.dataset.ls; drawTodo(); } return; }
-  if (b.dataset.tf){ tdTag = tdTag === b.dataset.tf ? null : b.dataset.tf; drawTodo(); return; }
+  if (b.dataset.tf){ tdTags = tdTags.includes(b.dataset.tf) ? tdTags.filter(g => g !== b.dataset.tf) : tdTags.concat(b.dataset.tf); drawTodo(); return; }
+  if (b.dataset.tc){ tdTags = []; drawTodo(); return; }
   if (b.dataset.tn){ openTagDlg(null, null); return; }
-  if (b.dataset.te){ openTagDlg(tdTag, null); return; }
+  if (b.dataset.te){ openTagDlg(tdTags[0], null); return; }
   if (b.dataset.vm){ tdSetPref('mode', b.dataset.vm); if (b.dataset.vm === 'cal' && tdIsSmart(tdSel)) tdSel = 'all'; drawTodo(); return; }
   if (b.dataset.cd){ tdCalDay = b.dataset.cd; drawTodo(); return; }
   if (b.dataset.cm !== undefined){
@@ -1897,11 +1909,12 @@ function openTodoEd(id, preset){
   $('#tde_list').value = it ? tdListOf(it, ls) : tdListSel(ls);
   const tmr = (() => { const d = parseDay(todayStr()); d.setDate(d.getDate() + 1); return isoLocal(d); })();
   const pre = it ? {} : Object.assign(tdSel === 'sv:today' ? { due:todayStr() } : tdSel === 'sv:upcoming' ? { due:tmr } : tdSel === 'sv:starred' ? { star:true } : {}, preset || {});   // a new to-do starts as the view you are in
-  tdeTags = it ? (Array.isArray(it.tags) ? it.tags.slice() : []) : (tdTag ? [tdTag] : []); drawTdeTags();
+  tdeTags = it ? (Array.isArray(it.tags) ? it.tags.slice() : []) : tdTags.slice(); drawTdeTags();
   $('#tde_d').value = it ? it.due || '' : pre.due || ''; $('#tde_tm').value = it && it.dt || ''; $('#tde_rep').value = it && it.rep || '';
   const on = !!(it ? it.star : pre.star); $('#tde_star').classList.toggle('on', on); $('#tde_star').setAttribute('aria-pressed', on);
   $('#tde_note').value = it && it.note || '';
   tdeSteps.set(it && it.steps);
+  $('#tde_icon').value = it && it.ic || ''; $('#tde_color').value = it && it.c || ''; tdeIconBtn(); CT = 'tde'; drawColorRow('tde');
   $('#tde_err').hidden = true; $('#tde_del').style.display = it ? '' : 'none'; $('#tde_move').style.display = it ? '' : 'none';
   $('#tdeDlg').showModal(); $('#tdeDlg .ef').scrollTop = 0;
   if (!it){ $('#tde_t').focus(); setTimeout(() => $('#tde_t').focus(), 80); } else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -1918,10 +1931,17 @@ function tdeSave(){
   it.t = t; it.l = $('#tde_lw').style.display === 'none' ? (it.l || tdListSel()) : $('#tde_list').value;
   put('due', due); put('dt', due ? dt : ''); put('rep', rep); put('star', $('#tde_star').classList.contains('on') ? true : undefined);
   put('note', $('#tde_note').value.trim());
+  put('ic', $('#tde_icon').value); put('c', $('#tde_color').value);
   if (tdeTags.length) it.tags = tdeTags.slice(); else delete it.tags;
   const st = tdeSteps.get(); if (st.length) it.steps = st; else delete it.steps;
   store.set('todos', l); $('#tdeDlg').close(); drawTodo();
 }
+function tdeIconBtn(){ const v = $('#tde_icon').value; $('#tde_iconBtn').innerHTML = v ? iconMarkup(v) : '+'; }
+$('#tde_iconBtn').addEventListener('click', () => {
+  ipTarget = v => { $('#tde_icon').value = v || ''; tdeIconBtn(); };
+  const v = $('#tde_icon').value; $('#e_icon_custom').value = v && !ICONS[v] ? v : ''; $('#ip_q').value = ''; drawIconPicker('');
+  $('#iconPick').showModal(); $('#ip_scroll').scrollTop = 0; ipSpy();
+});
 $('#tde_ok').onclick = tdeSave;
 $('#tde_x').onclick = () => $('#tdeDlg').close();
 $('#tde_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); tdeSave(); } });
@@ -1938,10 +1958,13 @@ $('#tde_tl').onclick = () => {
   if (!tdeId) return;
   const t = $('#tde_t').value.trim(); if (!t){ $('#tde_err').textContent = 'Give the to-do a name.'; $('#tde_err').hidden = false; return; }
   const due = $('#tde_d').value, tm = tdMin($('#tde_tm').value), note = $('#tde_note').value.trim(), steps = tdeSteps.get().map(s => s.t), id = tdeId;
+  const ic = $('#tde_icon').value, col = $('#tde_color').value;
   $('#tdeDlg').close(); setTab('home');
   if (due && due >= todayStr() && due !== viewDate) goDate(due);        // schedule it on its due day
   openEd('oo', null, defaultWin(), due && tm !== null ? tm : undefined);
   $('#e_t').value = t; $('#e_details').value = note; edSteps.set(steps); cur.fromTodo = id;
+  if (ic){ $('#e_icon').value = ic; updateIconBtn(); }
+  if (col){ $('#e_color').value = col; drawColorRow('e'); setEdAccent(); }       // the icon and colour come along
 };
 $('#tde_inbox').onclick = async () => {
   if (!tdeId) return;
@@ -2018,7 +2041,7 @@ $('#tg_del').onclick = () => {
   const id = tgEdit; if (!id) return;
   const _s = grab(), t = store.get('todos', []);
   t.forEach(x => { if (x.tags){ x.tags = x.tags.filter(g => g !== id); if (!x.tags.length) delete x.tags; } });
-  store.set('todos', t); store.set('todoTags', store.get('todoTags', []).filter(x => x.id !== id)); if (tdTag === id) tdTag = null;
+  store.set('todos', t); store.set('todoTags', store.get('todoTags', []).filter(x => x.id !== id)); tdTags = tdTags.filter(g => g !== id);
   $('#tgDlg').close(); drawTodo(); showUndo('Tag deleted', _s);
 };
 // tags inside the to-do editor
@@ -2175,7 +2198,7 @@ function diffBlock(o, n){
 let scopeCtx = null, scDays = [], scModes = [], scFrom = '', scTo = '';
 function drawScChips(){
   $('#sc_days').innerHTML = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((n, i) => '<button type="button" data-i="' + i + '"' + (scDays.includes(i) ? ' class="on"' : '') + '>' + n + '</button>').join('');
-  $('#sc_modes').innerHTML = ['home', 'school', 'away'].map(m => '<button type="button" data-m="' + m + '"' + (scModes.includes(m) ? ' class="on"' : '') + '>' + MODE_LABEL[m] + ' days</button>').join('');
+  $('#sc_modes').innerHTML = WIN_LISTS.map(m => '<button type="button" data-m="' + m + '"' + (scModes.includes(m) ? ' class="on"' : '') + '>' + MODE_LABEL[m] + ' days</button>').join('');
 }
 function askScope(type, ctx){
   scopeCtx = { type, ...ctx }; scDays = []; scModes = [];
@@ -2397,17 +2420,57 @@ function usualTypes(ds){
   const t = {}; ['climb1', 'peak', 'trough', 'climb2', 'wmz'].forEach(k => { t[k] = k === 'wmz' && m === 'school' ? 'home' : m; }); return t;
 }
 function drawUsual(){
-  const U = store.get('usual', {}), nm = { '': 'None', home:'Home', school:'School', away:'Away' };
-  $('#usualGrid').innerHTML = [1, 2, 3, 4, 5, 6, 0].map(i => '<button class="uwb" data-i="' + i + '"><b>' + ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][i] + '</b><span>' + nm[U[i] || ''] + '</span></button>').join('');
+  const U = store.get('usual', {}), nm = Object.assign({ '': 'None' }, MODE_LABEL);
+  $('#usualGrid').innerHTML = [1, 2, 3, 4, 5, 6, 0].map(i => '<button class="uwb" data-i="' + i + '"><b>' + ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][i] + '</b><span>' + (nm[U[i] || ''] || 'None') + '</span></button>').join('');
 }
 $('#tab-settings').insertAdjacentHTML('beforeend', '<div class="sleep"><h2>Usual days</h2><p class="wn">Tap a weekday to set where you usually are. New days start with it already picked.</p><div class="wk" id="usualGrid"></div></div>');
 drawUsual();
 $('#usualGrid').addEventListener('click', e => {
   const b = e.target.closest('.uwb'); if (!b) return;
-  const U = store.get('usual', {}), order = ['', 'home', 'school', 'away'], i = b.dataset.i;
-  U[i] = order[(order.indexOf(U[i] || '') + 1) % 4]; if (!U[i]) delete U[i];
+  const U = store.get('usual', {}), order = [''].concat(WIN_LISTS), i = b.dataset.i;
+  U[i] = order[(order.indexOf(U[i] || '') + 1) % order.length]; if (!U[i]) delete U[i];
   store.set('usual', U); drawUsual();
 });
+
+
+// ---- Settings: Day types ----
+$('#tab-settings').insertAdjacentHTML('beforeend', '<div class="sleep"><h2>Day types</h2><p class="wn">Home, School and Away are built in. Add your own, like Work or Sick. They appear in every block of the day, and tasks can be added to any of them.</p><div id="dtList"></div><button type="button" class="add" id="dtAdd">+ Add a day type</button></div>');
+function drawDayTypes(){
+  const cs = dayTypes();
+  $('#dtList').innerHTML = Object.keys(BUILTIN_TYPES).map(k => '<div class="dtRow"><span>' + esc(BUILTIN_TYPES[k]) + '</span><small>Built in</small></div>').join('') +
+    cs.map(t => '<button type="button" class="dtRow" data-dt="' + t.id + '"><span>' + esc(t.name) + '</span><small>Tap to rename or delete</small></button>').join('');
+  $('#dtAdd').disabled = cs.length >= 8; $('#dtAdd').textContent = cs.length >= 8 ? 'You can have up to 8 of your own' : '+ Add a day type';
+}
+drawDayTypes();
+let dtEdit = null;
+function openDayTypeDlg(id){
+  dtEdit = id; const t = id ? dayTypes().find(x => x.id === id) : null;
+  $('#dt_title').textContent = t ? 'Edit day type' : 'New day type'; $('#dt_t').value = t ? t.name : ''; $('#dt_err').hidden = true; $('#dt_del').hidden = !t;
+  $('#dtDlg').showModal(); $('#dt_t').focus(); setTimeout(() => $('#dt_t').focus(), 80);
+}
+function dayTypesChanged(){ syncTypes(); drawDayTypes(); drawUsual(); render(); }
+function dtSave(){
+  const v = $('#dt_t').value.trim().replace(/\s+/g, ' '), err = msg => { $('#dt_err').textContent = msg; $('#dt_err').hidden = false; };
+  if (!v){ err('Give it a name.'); return; }
+  if (Object.entries(MODE_LABEL).some(([k, n]) => k !== dtEdit && n.toLowerCase() === v.toLowerCase())){ err('There is already a day type called ' + v + '.'); return; }
+  const cs = dayTypes(), t = dtEdit ? cs.find(x => x.id === dtEdit) : null;
+  if (t) t.name = v; else cs.push({ id:'x' + Date.now().toString(36), name:v });
+  store.set('dayTypes', cs); $('#dtDlg').close(); dayTypesChanged();
+}
+$('#dt_ok').onclick = dtSave;
+$('#dt_x').onclick = () => $('#dtDlg').close();
+$('#dt_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); dtSave(); } });
+$('#dtAdd').onclick = () => openDayTypeDlg(null);
+$('#dtList').addEventListener('click', e => { const b = e.target.closest('[data-dt]'); if (b) openDayTypeDlg(b.dataset.dt); });
+$('#dt_del').onclick = async () => {
+  const id = dtEdit, t = id && dayTypes().find(x => x.id === id); if (!t) return;
+  if (!await ask('Delete the ' + t.name + ' day type? The tasks you added to it are deleted too, and days that used it become unset.', { ok:'Delete', danger:true })) return;
+  const b = store.get('blocks', null); if (b && b[id]){ delete b[id]; store.set('blocks', b); }
+  const pl = store.get('plans', {}); Object.values(pl).forEach(p => { if (p && p.t) Object.keys(p.t).forEach(k => { if (p.t[k] === id) delete p.t[k]; }); }); store.set('plans', pl); plans = pl;
+  const us = store.get('usual', {}); Object.keys(us).forEach(k => { if (us[k] === id) delete us[k]; }); store.set('usual', us);
+  if (day && day.types) Object.keys(day.types).forEach(k => { if (day.types[k] === id) delete day.types[k]; });
+  store.set('dayTypes', dayTypes().filter(x => x.id !== id)); saveDay(); $('#dtDlg').close(); dayTypesChanged();
+};
 
 $('#dnote').parentElement.insertAdjacentHTML('beforebegin', '<div class="sleep" id="energyCard"></div>');
 const EN_NAMES = ['Drained', 'Low', 'Okay', 'Good', 'Great'], EN_COL = ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e'];
@@ -2594,7 +2657,7 @@ function setEdAccent(){
   const c = $('#e_color').value || (WIN_STYLE[cur.wk] || WIN_STYLE.climb1).c, ed = $('#ed');
   ed.style.setProperty('--accent', c); ed.style.setProperty('--onacc', onColor(c));
 }
-['e', 'tdl', 'tg'].forEach(p => $('#' + p + '_colors').addEventListener('click', e => {
+['e', 'tdl', 'tg', 'tde'].forEach(p => $('#' + p + '_colors').addEventListener('click', e => {
   e.preventDefault();   // stop the wrapping label from re-clicking the first swatch
   const b = e.target.closest('button'); if (!b) return;
   CT = p;
@@ -2751,7 +2814,7 @@ $('#clr_go').onclick = async () => {
 // SAFETY, ACCESSIBILITY, EMPTY STATE
 // ============================================================
 function safeCol(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.trim())) ? c.trim() : null; }
-Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', welDlg:'Welcome to Yotei', qaDlg:'Quick add', tdlDlg:'To-do list', tgDlg:'Tag', tdeDlg:'To-do', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks', msgDlg:'Message' })
+Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', welDlg:'Welcome to Yotei', qaDlg:'Quick add', tdlDlg:'To-do list', tgDlg:'Tag', dtDlg:'Day type', tdeDlg:'To-do', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks', msgDlg:'Message' })
   .forEach(([id, l]) => { const d = document.getElementById(id); if (d) d.setAttribute('aria-label', l); });
 $('#tl').insertAdjacentHTML('beforebegin', '<div class="sleep emptyCard" id="emptyCard" hidden><h2>Start with your first task</h2><p class="wn">Add what you want to do today. A task added for all days repeats every day. You can use the + button any time.</p><button class="add" id="emptyAdd">Add a task</button></div>');
 function drawEmpty(){
@@ -2778,12 +2841,12 @@ function focusNow(){ if (viewDate !== todayStr()) return; const r = document.que
 })();
 const tabs = document.querySelectorAll('.tabs button');
 // ---- Android back button (only wired up inside the Android app) ----
-const BACK_ORDER = ['msgDlg', 'tgDlg', 'iconPick', 'colorSheet', 'tdlDlg', 'tdeDlg', 'qaDlg', 'welDlg', 'scopeDlg', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
+const BACK_ORDER = ['msgDlg', 'dtDlg', 'tgDlg', 'iconPick', 'colorSheet', 'tdlDlg', 'tdeDlg', 'qaDlg', 'welDlg', 'scopeDlg', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
 function handleBack(){
   for (const id of BACK_ORDER){
     const d = document.getElementById(id);
     if (!d || !d.open) continue;
-    const x = id === 'fabMenu' ? null : d.querySelector('#tg_x,#tdl_x,#tde_x,#qa_x,#wl_skip,#sc_x,#ip_x,#mv_x,#snap_x,#sh_x,#clr_x,#runClose,#ss_close,#e_x');
+    const x = id === 'fabMenu' ? null : d.querySelector('#dt_x,#tg_x,#tdl_x,#tde_x,#qa_x,#wl_skip,#sc_x,#ip_x,#mv_x,#snap_x,#sh_x,#clr_x,#runClose,#ss_close,#e_x');
     if (x) x.click(); else d.close();
     return true;
   }
@@ -2908,7 +2971,7 @@ const SET_MENU = [
   { label:'General', rows:[
     { id:'rem',   t:'Reminders',  ic:'bell',    col:'#5fae6b', cards:['Reminders'] },
     { id:'look',  t:'Appearance', ic:'palette', col:'#8fb85a', cards:['Appearance'] },
-    { id:'sched', t:'Schedule',   ic:'sliders', col:'#5b8bb8', cards:['Sleep caps', 'Energy rhythm', 'Usual days', 'Routine templates', 'Tasks with dates'] },
+    { id:'sched', t:'Schedule',   ic:'sliders', col:'#5b8bb8', cards:['Sleep caps', 'Energy rhythm', 'Usual days', 'Day types', 'Routine templates', 'Tasks with dates'] },
     { id:'edit',  t:'Editing',    ic:'pencil',  col:'#e0a03a', cards:['Editing'] }] },
   { label:'Data', rows:[
     { id:'bk',    t:'Backup',          ic:'save',  col:'#e0787f', cards:['Backup'] },
