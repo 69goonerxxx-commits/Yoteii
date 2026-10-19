@@ -1,5 +1,5 @@
 import { weekSummary } from './review.js';
-import { esc } from './util.js';
+import { esc, PALS, ACCENTS, onAccent } from './util.js';
 import { validateBackup } from './validate.js';
 import { TASK_LISTS, sameId, normalizeIds, removeTask, removeFromRecord } from './tasks.js';
 import { store, initStore, info, onStoreError, replaceAll, clearAll, estimateBytes, makeSnapshot, snapshotIfDue, listSnapshots, restoreSnapshot } from './storage.js';
@@ -474,6 +474,8 @@ function drawIconPicker(q){
   $('#ip_tabs').innerHTML = shown.map(g => '<button type="button" role="tab" data-g="' + ipId(g) + '" aria-label="' + g + '" title="' + g + '">' + catMarkup(g) + '</button>').join('') + '<button type="button" role="tab" data-g="ip_custom" aria-label="Custom" title="Custom">' + (ICONS.sparkles || '') + '</button>';
   ipSpy();
 }
+let ipTarget = null;    // who the open icon picker is for: null = the task editor, or a function that takes the chosen icon
+function ipSet(v){ if (ipTarget) ipTarget(v); else { $('#e_icon').value = v; updateIconBtn(); } $('#iconPick').close(); }
 let pickTok = 0;   // identifies the current icon pick; closing the picker or editor cancels any pick that is still downloading
 async function pickFa(n, btn){
   const key = 'fa-' + n, tok = ++pickTok;
@@ -495,9 +497,9 @@ async function pickFa(n, btn){
     clearTimeout(timer); if (btn) btn.classList.remove('loading');
   }
   if (tok !== pickTok) return;   // the picker or editor was closed (or another icon chosen) while this downloaded: leave the editor alone
-  $('#e_icon').value = key; updateIconBtn(); $('#iconPick').close();
+  ipSet(key);
 }
-$('#iconPick').addEventListener('close', () => { pickTok++; });
+$('#iconPick').addEventListener('close', () => { pickTok++; ipTarget = null; });
 $('#ed').addEventListener('close', () => { pickTok++; });
 function ipSpy(){
   const sc = $('#ip_scroll'), tabs = $('#ip_tabs'); if (!sc || !tabs) return;
@@ -519,6 +521,7 @@ $('#ip_tabs').addEventListener('click', e => {
 });
 $('#ip_q').addEventListener('input', e => drawIconPicker(e.target.value));
 $('#e_iconBtn').addEventListener('click', () => {
+  ipTarget = null;
   const v = $('#e_icon').value;
   $('#e_icon_custom').value = (v && !ICONS[v]) ? v : '';
   $('#ip_q').value = ''; drawIconPicker('');
@@ -527,11 +530,11 @@ $('#e_iconBtn').addEventListener('click', () => {
 $('#ip_groups').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.fa){ pickFa(b.dataset.fa, b); return; }
-  $('#e_icon').value = b.dataset.i; updateIconBtn(); $('#iconPick').close();
+  ipSet(b.dataset.i);
 });
 $('#ip_x').onclick = () => $('#iconPick').close();
 $('#ip_ok').onclick = () => {
-  $('#e_icon').value = $('#e_icon_custom').value.trim(); updateIconBtn(); $('#iconPick').close();
+  ipSet($('#e_icon_custom').value.trim());
 };
 function curveAvg(pts, from, to){
   const at = h => { for (let i = 0; i < pts.length - 1; i++){ const [h0, v0] = pts[i], [h1, v1] = pts[i + 1]; if (h >= h0 && h <= h1) return v0 + (v1 - v0) * (h - h0) / (h1 - h0); } return pts[pts.length - 1][1]; };
@@ -1740,17 +1743,24 @@ function tdDue(x){        // the due label, and whether the to-do is overdue
   return { late, today:x.due === td, text:(late ? 'Overdue \u00b7 ' : '') + day + (mins !== null ? ', ' + fmt(mins).join(' ') : '') };
 }
 const TD_COLORS = ['#5e96cb', '#22c55e', '#f59e0b', '#ec4899', '#a78bfa', '#14b8a6'];
+const TD_NEW = ['#4ade80', '#fbbf24', '#f472b6', '#a78bfa', '#2dd4bf', '#fb923c', '#f87171', '#60a5fa'];   // colours offered first to new lists and tags
+function tdListColor(l, i){ return (l && l.c) || (l && l.id === 'main' ? '' : TD_COLORS[i % TD_COLORS.length]) || ''; }   // '' means the app accent
+function tdLc(id, lists){ const i = Math.max(0, lists.findIndex(z => z.id === id)); return tdListColor(lists[i], i) || 'var(--accent)'; }
+let tdTag = null;        // the tag the list is filtered by
 const TD_CAL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>';
 const TD_SECS = [['late', 'Overdue'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['upcoming', 'Upcoming'], ['none', 'No date']];
 function drawTodo(){
   const el = $('#todoCard'); if (!el) return;
+  const tgAll = store.get('todoTags', []); if (tdTag && !tgAll.some(t => t.id === tdTag)) tdTag = null;
+  const TGM = {}; tgAll.forEach(t => { TGM[t.id] = t; });
   const lists = tdLists(); if (tdSel !== 'all' && !tdIsSmart(tdSel) && !lists.some(x => x.id === tdSel)) tdSel = 'all';
-  const P = tdPrefs(), all = store.get('todos', []), view = all.filter(x => tdIn(x, tdSel, lists)), isList = lists.some(x => x.id === tdSel), showCal = P.mode === 'cal' && !tdIsSmart(tdSel);
+  const P = tdPrefs(), all = store.get('todos', []), view = all.filter(x => tdIn(x, tdSel, lists) && (!tdTag || (x.tags || []).includes(tdTag))), isList = lists.some(x => x.id === tdSel), showCal = P.mode === 'cal' && !tdIsSmart(tdSel);
   const nameOf = id => (lists.find(x => x.id === id) || lists[0]).name;
-  const chips = '<div class="tdChipsW"><div class="tdChips" role="tablist" aria-label="Lists">' + [{ id:'all', name:'All' }].concat(TD_SMART.map(z => ({ id:z[0], name:z[1], sv:true })), lists).map(x => '<button type="button" role="tab" class="tdChip' + (x.id === tdSel ? ' on' : '') + '" data-ls="' + x.id + '" aria-selected="' + (x.id === tdSel) + '">' + esc(x.name) + (x.sv ? '<span class="tdCn">' + all.filter(z => !z.done && tdIn(z, x.id, lists)).length + '</span>' : '') + '</button>').join('') + '</div><button type="button" class="tdChip tdAddL" data-ls="+" aria-label="New list">+</button></div>';
+  const chips = '<div class="tdChipsW"><div class="tdChips" role="tablist" aria-label="Lists">' + [{ id:'all', name:'All' }].concat(TD_SMART.map(z => ({ id:z[0], name:z[1], sv:true })), lists.map(l => ({ id:l.id, name:l.name, lst:true, lc:tdLc(l.id, lists), ic:iconMarkup(l.ic || 'checklist') }))).map(x => '<button type="button" role="tab" class="tdChip' + (x.id === tdSel ? ' on' : '') + '" data-ls="' + x.id + '" aria-selected="' + (x.id === tdSel) + '"' + (x.lst ? ' style="--lc:' + x.lc + '"' : '') + '>' + (x.lst ? '<i class="tdCi">' + x.ic + '</i>' : '') + esc(x.name) + (x.sv ? '<span class="tdCn">' + all.filter(z => !z.done && tdIn(z, x.id, lists)).length + '</span>' : '') + '</button>').join('') + '</div><button type="button" class="tdChip tdAddL" data-ls="+" aria-label="New list">+</button></div>';
   const btn = '<button class="inNew" id="tdNew">' + IN_PLUS + '<span>New To-do</span></button>';
+  const tgRow = tgAll.length ? '<div class="tgFilter"><span class="tgLab">Tags</span>' + tgAll.map(t => '<button type="button" class="tgChip' + (t.id === tdTag ? ' on' : '') + '" data-tf="' + t.id + '" aria-pressed="' + (t.id === tdTag) + '" style="--tc:' + (t.c || 'var(--accent)') + '">#' + esc(t.name) + '</button>').join('') + '<button type="button" class="tdLink" data-tn="1">+ New</button>' + (tdTag ? '<button type="button" class="tdLink" data-te="1">Edit tag</button>' : '') + '</div>' : '';
   if (!view.length && !showCal){
-    el.innerHTML = chips + '<div class="inEmpty"><div class="inIcon">' + IN_CHECK + '</div><h2>' + (tdSel === 'all' ? 'Your To-do List' : esc(tdName(tdSel, lists))) + '</h2><p class="wn">' + (tdSel === 'all' ? 'A simple checklist for things to get done. Add a date if it has a deadline, and tick them off as you go.' : 'Nothing here yet.') + '</p>' + btn + (isList ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
+    el.innerHTML = chips + tgRow + '<div class="inEmpty"><div class="inIcon">' + IN_CHECK + '</div><h2>' + (tdSel === 'all' ? 'Your To-do List' : esc(tdName(tdSel, lists))) + '</h2><p class="wn">' + (tdSel === 'all' ? 'A simple checklist for things to get done. Add a date if it has a deadline, and tick them off as you go.' : 'Nothing here yet.') + '</p>' + btn + (isList ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
     return;
   }
   const td = todayStr(), tmr = (() => { const d = parseDay(td); d.setDate(d.getDate() + 1); return isoLocal(d); })();
@@ -1762,22 +1772,23 @@ function drawTodo(){
   const sortFn = P.sort === 'az' ? (a, b) => a.t.localeCompare(b.t) : P.sort === 'new' ? (a, b) => String(b.id).localeCompare(String(a.id)) : null;
   const arrange = a => sortFn ? a.slice().sort(sortFn) : a;
   const row = (x, canDrag) => {
-    const li = lists.findIndex(z => z.id === tdListOf(x, lists)), lc = li <= 0 ? 'var(--accent)' : TD_COLORS[li % TD_COLORS.length];
+    const lc = tdLc(tdListOf(x, lists), lists);
     const di = tdDue(x), st = Array.isArray(x.steps) ? x.steps : [], nd = st.filter(s => s.d).length, ex = tdOpen.has(x.id) && (st.length || x.note);
-    const tagTxt = lists.length > 1 && !isList ? '<span class="tdTag">' + esc(nameOf(tdListOf(x, lists))) + '</span>' : '';
+    const lst = lists.find(z => z.id === tdListOf(x, lists)) || lists[0], tagTxt = lists.length > 1 && !isList ? '<span class="tdTag" style="--lc:' + lc + '"><i class="tdCi">' + iconMarkup(lst.ic || 'checklist') + '</i>' + esc(lst.name) + '</span>' : '';
+    const tgs = (x.tags || []).filter(id => TGM[id]).map(id => '<span class="tgChip" style="--tc:' + (TGM[id].c || 'var(--accent)') + '">#' + esc(TGM[id].name) + '</span>').join('');
     const exBtn = (ic, txt, lab) => '<button type="button" class="tdMb" data-ex="' + x.id + '" aria-expanded="' + !!ex + '" aria-label="' + lab + '">' + ic + txt + '</button>';
     const meta = (di ? '<span class="tdDue' + (di.late ? ' late' : di.today ? ' today' : '') + '">' + TD_CAL + esc(di.text) + '</span>' : '') + (x.rep && TD_REP[x.rep] ? '<span class="tdRep">' + TD_LOOP + TD_REP[x.rep] + '</span>' : '') +
       (st.length ? exBtn(TD_STEP, nd + '/' + st.length, 'Subtasks, ' + nd + ' of ' + st.length + ' done') : '') + (x.note ? exBtn(TD_NOTE, '', 'Note') : '') + tagTxt;
     const exp = ex ? '<div class="tdExp">' + st.map((s, i) => '<button type="button" class="tdStp' + (s.d ? ' done' : '') + '" data-sg="' + x.id + '" data-si="' + i + '"><span class="tdSc"></span><span>' + esc(s.t) + '</span></button>').join('') + (x.note ? '<div class="tdNote">' + esc(x.note) + '</div>' : '') + '</div>' : '';
     return '<div class="tdItem' + (x.done ? ' done' : '') + '" data-id="' + x.id + '" style="--lc:' + lc + '"><button class="tdChk" data-tg="' + x.id + '" aria-pressed="' + (x.done ? 'true' : 'false') + '" aria-label="' + (x.done ? 'Mark not done: ' : 'Mark done: ') + esc(x.t) + '"></button>' +
-      '<div class="tdMain"><button class="tdTxt" data-ed="' + x.id + '">' + esc(x.t) + '</button>' + (meta ? '<div class="tdMeta">' + meta + '</div>' : '') + exp + '</div>' +
+      '<div class="tdMain"><button class="tdTxt" data-ed="' + x.id + '">' + esc(x.t) + '</button>' + (meta ? '<div class="tdMeta">' + meta + '</div>' : '') + (tgs ? '<div class="tdTags">' + tgs + '</div>' : '') + exp + '</div>' +
       ((!x.done || (canDrag && !x.done)) ? '<div class="tdSide">' + (x.done ? '' : '<button class="tdStar' + (x.star ? ' on' : '') + '" data-st="' + x.id + '" aria-pressed="' + (x.star ? 'true' : 'false') + '" aria-label="' + (x.star ? 'Remove star: ' : 'Star: ') + esc(x.t) + '">' + TD_STAR + '</button>') + (!x.done && canDrag ? '<span class="tdH" aria-label="Drag to reorder" title="Drag to reorder">&#8942;&#8942;</span>' : '') + '</div>' : '') + '</div>';
   };
   const grp = (a, g, canDrag) => a.length ? '<div class="tdList" data-grp="' + g + '">' + a.map(x => row(x, canDrag)).join('') + '</div>' : '';
   const opt = (v, t) => '<option value="' + v + '"' + (P.sort === v ? ' selected' : '') + '>' + t + '</option>';
   const vt = '<div class="tdView" role="group" aria-label="View"><button type="button" data-vm="list" aria-pressed="' + !showCal + '" aria-label="List view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></button><button type="button" data-vm="cal" aria-pressed="' + showCal + '" aria-label="Calendar view">' + TD_CAL + '</button></div>';
   const edl = isList ? '<button type="button" class="tdEdl" id="tdListEdit" aria-label="Edit list"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>' : '';
-  if (showCal){ el.innerHTML = chips + '<div class="tdBar"><span></span><div class="tdBarR">' + vt + edl + '</div></div>' + tdCalHtml(view, grp, lists); return; }
+  if (showCal){ el.innerHTML = chips + tgRow + '<div class="tdBar"><span></span><div class="tdBarR">' + vt + edl + '</div></div>' + tdCalHtml(view, grp, lists); return; }
   const bar = '<div class="tdBar"><label class="tdSortL"><span>Sort</span><select id="td_sort" aria-label="Sort by">' + opt('date', 'By date') + opt('mine', 'My order') + opt('az', 'A to Z') + opt('new', 'Newest first') + '</select></label><div class="tdBarR">' + vt + edl + '</div></div>';
   let body = '';
   if (P.sort === 'date'){
@@ -1792,7 +1803,7 @@ function drawTodo(){
     const drag = P.sort === 'mine';
     body = grp(arrange(open.filter(x => x.star)), 'star', drag) + grp(arrange(open.filter(x => !x.star && isLate(x))), 'late', drag) + grp(arrange(open.filter(x => !x.star && !isLate(x))), 'norm', drag);
   }
-  el.innerHTML = chips + btn + bar + body +
+  el.innerHTML = chips + tgRow + btn + bar + body +
     (dn.length ? '<p class="tdSub"><button type="button" id="tdDoneTog" aria-expanded="' + P.done + '">Done (' + dn.length + ')<svg viewBox="0 0 24 24" aria-hidden="true" class="' + (P.done ? 'open' : '') + '"><path d="M6 9l6 6 6-6"/></svg></button><button type="button" id="tdClear">Clear done</button></p>' + (P.done ? grp(arrange(dn), 'done', false) : '') : '');
 }
 function tdCalHtml(view, grp, lists){
@@ -1806,7 +1817,7 @@ function tdCalHtml(view, grp, lists){
   for (let i = 0; i < lead; i++) cells.push('<span class="calC off"></span>');
   for (let d = 1; d <= dim; d++){
     const iso = isoLocal(new Date(y, mo, d)), its = byDay[iso] || [], open = its.filter(x => !x.done);
-    const dots = open.slice(0, 3).map(x => { const li = lists.findIndex(z => z.id === tdListOf(x, lists)); return '<i style="background:' + (x.due < td ? 'var(--bad)' : li <= 0 ? 'var(--accent)' : TD_COLORS[li % TD_COLORS.length]) + '"></i>'; }).join('');
+    const dots = open.slice(0, 3).map(x => '<i style="background:' + (x.due < td ? 'var(--bad)' : tdLc(tdListOf(x, lists), lists)) + '"></i>').join('');
     cells.push('<button type="button" class="calC' + (iso === td ? ' today' : '') + (iso === tdCalDay ? ' sel' : '') + '" data-cd="' + iso + '" aria-pressed="' + (iso === tdCalDay) + '" aria-label="' + esc(parseDay(iso).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' })) + ', ' + open.length + ' to do"><b>' + d + '</b><span class="calD">' + dots + '</span></button>');
   }
   const head = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(n => '<span>' + n + '</span>').join('');
@@ -1821,6 +1832,9 @@ function tdCalHtml(view, grp, lists){
 $('#todoCard').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.ls){ if (b.dataset.ls === '+') openListDlg(null); else { tdSel = b.dataset.ls; drawTodo(); } return; }
+  if (b.dataset.tf){ tdTag = tdTag === b.dataset.tf ? null : b.dataset.tf; drawTodo(); return; }
+  if (b.dataset.tn){ openTagDlg(null, null); return; }
+  if (b.dataset.te){ openTagDlg(tdTag, null); return; }
   if (b.dataset.vm){ tdSetPref('mode', b.dataset.vm); if (b.dataset.vm === 'cal' && tdIsSmart(tdSel)) tdSel = 'all'; drawTodo(); return; }
   if (b.dataset.cd){ tdCalDay = b.dataset.cd; drawTodo(); return; }
   if (b.dataset.cm !== undefined){
@@ -1883,6 +1897,7 @@ function openTodoEd(id, preset){
   $('#tde_list').value = it ? tdListOf(it, ls) : tdListSel(ls);
   const tmr = (() => { const d = parseDay(todayStr()); d.setDate(d.getDate() + 1); return isoLocal(d); })();
   const pre = it ? {} : Object.assign(tdSel === 'sv:today' ? { due:todayStr() } : tdSel === 'sv:upcoming' ? { due:tmr } : tdSel === 'sv:starred' ? { star:true } : {}, preset || {});   // a new to-do starts as the view you are in
+  tdeTags = it ? (Array.isArray(it.tags) ? it.tags.slice() : []) : (tdTag ? [tdTag] : []); drawTdeTags();
   $('#tde_d').value = it ? it.due || '' : pre.due || ''; $('#tde_tm').value = it && it.dt || ''; $('#tde_rep').value = it && it.rep || '';
   const on = !!(it ? it.star : pre.star); $('#tde_star').classList.toggle('on', on); $('#tde_star').setAttribute('aria-pressed', on);
   $('#tde_note').value = it && it.note || '';
@@ -1903,6 +1918,7 @@ function tdeSave(){
   it.t = t; it.l = $('#tde_lw').style.display === 'none' ? (it.l || tdListSel()) : $('#tde_list').value;
   put('due', due); put('dt', due ? dt : ''); put('rep', rep); put('star', $('#tde_star').classList.contains('on') ? true : undefined);
   put('note', $('#tde_note').value.trim());
+  if (tdeTags.length) it.tags = tdeTags.slice(); else delete it.tags;
   const st = tdeSteps.get(); if (st.length) it.steps = st; else delete it.steps;
   store.set('todos', l); $('#tdeDlg').close(); drawTodo();
 }
@@ -1940,29 +1956,82 @@ $('#tde_inbox').onclick = async () => {
 $('#tde_del').onclick = () => {
   if (!tdeId) return; const _s = grab(); store.set('todos', store.get('todos', []).filter(x => x.id !== tdeId)); $('#tdeDlg').close(); drawTodo(); showUndo('To-do removed', _s);
 };
-// ---- list names ----
+// ---- list names, icons and colours ----
 let tdlEdit = null;
+function tdlIconBtn(){ $('#tdl_iconBtn').innerHTML = iconMarkup($('#tdl_icon').value || 'checklist'); }
 function openListDlg(id){
-  tdlEdit = id; const it = id ? tdLists().find(x => x.id === id) : null;
+  tdlEdit = id; const ls = tdLists(), i = id ? ls.findIndex(x => x.id === id) : -1, it = i >= 0 ? ls[i] : null;
   $('#tdl_title').textContent = it ? 'Edit list' : 'New list'; $('#tdl_t').value = it ? it.name : '';
+  $('#tdl_icon').value = it ? (it.ic || 'checklist') : 'checklist';
+  $('#tdl_color').value = it ? tdListColor(it, i) : TD_NEW[(ls.length - 1) % TD_NEW.length];
+  tdlIconBtn(); CT = 'tdl'; drawColorRow('tdl');
   $('#tdl_del').hidden = !it || id === 'main';
   $('#tdlDlg').showModal(); $('#tdl_t').focus(); setTimeout(() => $('#tdl_t').focus(), 80);
 }
 function tdlSave(){
   const v = $('#tdl_t').value.trim(); if (!v) return;
-  const ls = tdLists(), it = tdlEdit ? ls.find(x => x.id === tdlEdit) : null;
-  if (it) it.name = v; else { const id = 'l' + Date.now().toString(36); ls.push({ id, name:v }); tdSel = id; }
+  const ls = tdLists(), it = tdlEdit ? ls.find(x => x.id === tdlEdit) : null, ic = $('#tdl_icon').value, c = $('#tdl_color').value;
+  const put = (o, k, val) => { if (val) o[k] = val; else delete o[k]; };
+  if (it){ it.name = v; put(it, 'ic', ic); put(it, 'c', c); }
+  else { const n = { id:'l' + Date.now().toString(36), name:v }; put(n, 'ic', ic); put(n, 'c', c); ls.push(n); tdSel = n.id; }
   store.set('todoLists', ls); $('#tdlDlg').close(); drawTodo();
 }
 $('#tdl_ok').onclick = tdlSave;
 $('#tdl_x').onclick = () => $('#tdlDlg').close();
 $('#tdl_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); tdlSave(); } });
+$('#tdlDlg').addEventListener('close', () => { pickTok++; });
+$('#tdl_iconBtn').addEventListener('click', () => {
+  ipTarget = v => { $('#tdl_icon').value = v || 'checklist'; tdlIconBtn(); };
+  $('#e_icon_custom').value = ''; $('#ip_q').value = ''; drawIconPicker('');
+  $('#iconPick').showModal(); $('#ip_scroll').scrollTop = 0; ipSpy();
+});
 $('#tdl_del').onclick = () => {
   const id = tdlEdit; if (!id || id === 'main') return;
   const _s = grab(), ls = tdLists().filter(x => x.id !== id), t = store.get('todos', []);
   t.forEach(x => { if (x.l === id) x.l = 'main'; });       // the to-dos are kept: they move to the first list
   store.set('todos', t); store.set('todoLists', ls); tdSel = 'all'; $('#tdlDlg').close(); drawTodo(); showUndo('List deleted. Its to-dos moved to ' + ls[0].name, _s);
 };
+
+// ---- tags: shared by every list, each with its own colour ----
+let tgEdit = null, tgAfter = null;     // tgAfter: called with the saved tag (the to-do editor uses it to pick the new tag)
+function openTagDlg(id, after){
+  tgEdit = id; tgAfter = after || null;
+  const tags = store.get('todoTags', []), t = id ? tags.find(x => x.id === id) : null;
+  $('#tg_title').textContent = t ? 'Edit tag' : 'New tag'; $('#tg_t').value = t ? t.name : '';
+  $('#tg_color').value = t ? t.c || '' : TD_NEW[tags.length % TD_NEW.length];
+  CT = 'tg'; drawColorRow('tg'); $('#tg_del').hidden = !t;
+  $('#tgDlg').showModal(); $('#tg_t').focus(); setTimeout(() => $('#tg_t').focus(), 80);
+}
+function tgSave(){
+  const name = $('#tg_t').value.trim().replace(/^#+/, '').replace(/\s+/g, '-'); if (!name) return;
+  const tags = store.get('todoTags', []), c = $('#tg_color').value;
+  const dupe = tags.find(t => t.name.toLowerCase() === name.toLowerCase() && t.id !== tgEdit);
+  let t = dupe;                                                   // the same name again just reuses that tag
+  if (!t && tgEdit){ t = tags.find(x => x.id === tgEdit); if (t){ t.name = name; t.c = c; } }
+  if (!t){ t = { id:'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), name, c }; tags.push(t); }
+  store.set('todoTags', tags); $('#tgDlg').close(); drawTodo(); if (tgAfter) tgAfter(t);
+}
+$('#tg_ok').onclick = tgSave;
+$('#tg_x').onclick = () => $('#tgDlg').close();
+$('#tg_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); tgSave(); } });
+$('#tg_del').onclick = () => {
+  const id = tgEdit; if (!id) return;
+  const _s = grab(), t = store.get('todos', []);
+  t.forEach(x => { if (x.tags){ x.tags = x.tags.filter(g => g !== id); if (!x.tags.length) delete x.tags; } });
+  store.set('todos', t); store.set('todoTags', store.get('todoTags', []).filter(x => x.id !== id)); if (tdTag === id) tdTag = null;
+  $('#tgDlg').close(); drawTodo(); showUndo('Tag deleted', _s);
+};
+// tags inside the to-do editor
+let tdeTags = [];
+function drawTdeTags(){
+  const tags = store.get('todoTags', []);
+  $('#tde_tags').innerHTML = tags.map(t => '<button type="button" class="tgChip' + (tdeTags.includes(t.id) ? ' on' : '') + '" data-tt="' + t.id + '" aria-pressed="' + tdeTags.includes(t.id) + '" style="--tc:' + (t.c || 'var(--accent)') + '">#' + esc(t.name) + '</button>').join('') + '<button type="button" class="tgChip tgNew" data-tn="1">+ New tag</button>';
+}
+$('#tde_tags').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.tn){ openTagDlg(null, t => { if (!tdeTags.includes(t.id)) tdeTags.push(t.id); drawTdeTags(); }); return; }
+  const id = b.dataset.tt; tdeTags = tdeTags.includes(id) ? tdeTags.filter(g => g !== id) : tdeTags.concat(id); drawTdeTags();
+});
 
 function energyHtml(H){
   const wr = {};
@@ -2018,14 +2087,24 @@ function importICS(txt){
 
 // ---- appearance + settings cards ----
 function applyLook(){
-  const T = store.get('theme', 'dark'), th = T === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : T;
-  document.documentElement.dataset.theme = th; document.documentElement.dataset.text = store.get('text', 'normal');
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = th === 'light' ? '#f3f5fb' : '#1c1c1e';
+  const T = store.get('theme', 'dark'), P = PALS.find(p => p.id === T);
+  const base = T === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : (P ? P.base : 'dark'), R = document.documentElement;
+  R.dataset.theme = base; if (P && P.id !== 'dark' && P.id !== 'light') R.dataset.pal = P.id; else delete R.dataset.pal;
+  R.dataset.text = store.get('text', 'normal');
+  const A = ACCENTS.find(a => a.id === store.get('accent', 'blue')) || ACCENTS[0], hex = base === 'light' ? A.light : A.dark;
+  R.style.setProperty('--accent', hex); R.style.setProperty('--onacc', onAccent(hex));
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = getComputedStyle(R).getPropertyValue('--bg').trim() || (base === 'light' ? '#f3f5fb' : '#1c1c1e');
+  drawAccRow();
+}
+function drawAccRow(){
+  const el = document.getElementById('accRow'); if (!el) return;
+  const cur = store.get('accent', 'blue'), light = document.documentElement.dataset.theme === 'light';
+  el.innerHTML = ACCENTS.map(a => '<button type="button" class="accSw" role="radio" data-ac="' + a.id + '" aria-checked="' + (a.id === cur) + '" aria-label="' + a.name + '" style="--c:' + (light ? a.light : a.dark) + '"></button>').join('');
 }
 const selOpts = (arr, cur) => arr.map(o => '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + o[1] + '</option>').join('');
 $('#tab-settings').insertAdjacentHTML('beforeend',
   '<div class="sleep"><h2>Energy rhythm</h2><p class="wn">Shifts when your energy windows start: 30 min earlier, as planned, or 45 min later.</p><div class="capRow"><label for="chrSel">Rhythm</label><select id="chrSel">' + selOpts([['early', 'Early bird'], ['normal', 'In between'], ['late', 'Night owl']], store.get('chrono', 'normal')) + '</select></div></div>' +
-  '<div class="sleep"><h2>Appearance</h2><div class="capRow"><label for="thSel">Theme</label><select id="thSel">' + selOpts([['dark', 'Dark'], ['light', 'Light'], ['auto', 'Match device']], store.get('theme', 'dark')) + '</select></div><div class="capRow"><label for="clkSel">Clock</label><select id="clkSel">' + selOpts([['12', '12-hour'], ['24', '24-hour']], store.get('clock', '12')) + '</select></div><div class="capRow"><label for="txSel">Text size</label><select id="txSel">' + selOpts([['normal', 'Normal'], ['large', 'Large']], store.get('text', 'normal')) + '</select></div></div>' +
+  '<div class="sleep"><h2>Appearance</h2><div class="capRow"><label for="thSel">Theme</label><select id="thSel">' + selOpts(PALS.map(p => [p.id, p.name]).concat([['auto', 'Match device']]), store.get('theme', 'dark')) + '</select></div><div class="accBlock"><label id="accLab">Accent colour</label><div id="accRow" role="radiogroup" aria-labelledby="accLab"></div></div><div class="capRow"><label for="clkSel">Clock</label><select id="clkSel">' + selOpts([['12', '12-hour'], ['24', '24-hour']], store.get('clock', '12')) + '</select></div><div class="capRow"><label for="txSel">Text size</label><select id="txSel">' + selOpts([['normal', 'Normal'], ['large', 'Large']], store.get('text', 'normal')) + '</select></div></div>' +
   '<div class="sleep"><h2>Calendar import</h2><p class="wn">Import a .ics file from Google, Apple or Outlook calendar. Timed events become fixed-time one-off tasks (30 days back, 90 ahead, in your device time zone). All-day events are skipped, and recurring events import only their first occurrence.</p><button class="add" id="icsBtn">Choose .ics file</button><input type="file" id="icsF" accept=".ics,text/calendar" hidden></div>');
 $('#tab-settings').addEventListener('change', e => {
   if (e.target.id === 'chrSel'){ store.set('chrono', e.target.value); render(); }
@@ -2033,6 +2112,7 @@ $('#tab-settings').addEventListener('change', e => {
   else if (e.target.id === 'txSel'){ store.set('text', e.target.value); applyLook(); }
   else if (e.target.id === 'clkSel'){ store.set('clock', e.target.value); CLOCK24 = e.target.value === '24'; drawClock(); render(); }
 });
+$('#tab-settings').addEventListener('click', e => { const b = e.target.closest('.accSw'); if (b){ store.set('accent', b.dataset.ac); applyLook(); } });
 $('#icsBtn').addEventListener('click', () => $('#icsF').click());
 $('#icsF').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
@@ -2303,7 +2383,7 @@ function toast(msg, label, fn){
 setInterval(() => { if (toastUntil && Date.now() > toastUntil + 300) hideToast(); }, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && toastUntil && Date.now() >= toastUntil) hideToast(); });
 $('#toast').addEventListener('click', e => { if (e.target.id !== 'toastBtn') hideToast(); });
-const UNDO_KEYS = ['blocks', 'ovr', 'plans', 'inbox', 'todos', 'todoLists', 'todoPrefs', 'taskNotes', 'hist', 'wins', 'wovr'];
+const UNDO_KEYS = ['blocks', 'ovr', 'plans', 'inbox', 'todos', 'todoLists', 'todoTags', 'todoPrefs', 'taskNotes', 'hist', 'wins', 'wovr'];
 function grab(){ const s = {}; UNDO_KEYS.forEach(k => { s[k] = store.raw(k); }); return s; }
 function showUndo(msg, s){
   toast(msg, 'Undo', () => {
@@ -2514,7 +2594,7 @@ function setEdAccent(){
   const c = $('#e_color').value || (WIN_STYLE[cur.wk] || WIN_STYLE.climb1).c, ed = $('#ed');
   ed.style.setProperty('--accent', c); ed.style.setProperty('--onacc', onColor(c));
 }
-['e'].forEach(p => $('#' + p + '_colors').addEventListener('click', e => {
+['e', 'tdl', 'tg'].forEach(p => $('#' + p + '_colors').addEventListener('click', e => {
   e.preventDefault();   // stop the wrapping label from re-clicking the first swatch
   const b = e.target.closest('button'); if (!b) return;
   CT = p;
@@ -2671,7 +2751,7 @@ $('#clr_go').onclick = async () => {
 // SAFETY, ACCESSIBILITY, EMPTY STATE
 // ============================================================
 function safeCol(c){ return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.trim())) ? c.trim() : null; }
-Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', welDlg:'Welcome to Yotei', qaDlg:'Quick add', tdlDlg:'To-do list', tdeDlg:'To-do', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks', msgDlg:'Message' })
+Object.entries({ ed:'Task editor', fabMenu:'Add', iconPick:'Choose an icon', colorSheet:'Pick a color', scopeDlg:'Apply this change to', snapDlg:'Snapshots', mvDlg:'Move or copy', shDlg:'Running late', clrDlg:'Clear all data', setupDlg:'Welcome to Yotei', welDlg:'Welcome to Yotei', qaDlg:'Quick add', tdlDlg:'To-do list', tgDlg:'Tag', tdeDlg:'To-do', runDlg:'Routine timer', taskSheet:'Task details', blockInfo:'Block information', stepsSheet:'Subtasks', msgDlg:'Message' })
   .forEach(([id, l]) => { const d = document.getElementById(id); if (d) d.setAttribute('aria-label', l); });
 $('#tl').insertAdjacentHTML('beforebegin', '<div class="sleep emptyCard" id="emptyCard" hidden><h2>Start with your first task</h2><p class="wn">Add what you want to do today. A task added for all days repeats every day. You can use the + button any time.</p><button class="add" id="emptyAdd">Add a task</button></div>');
 function drawEmpty(){
@@ -2698,12 +2778,12 @@ function focusNow(){ if (viewDate !== todayStr()) return; const r = document.que
 })();
 const tabs = document.querySelectorAll('.tabs button');
 // ---- Android back button (only wired up inside the Android app) ----
-const BACK_ORDER = ['msgDlg', 'tdlDlg', 'tdeDlg', 'qaDlg', 'welDlg', 'scopeDlg', 'iconPick', 'colorSheet', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
+const BACK_ORDER = ['msgDlg', 'tgDlg', 'iconPick', 'colorSheet', 'tdlDlg', 'tdeDlg', 'qaDlg', 'welDlg', 'scopeDlg', 'mvDlg', 'snapDlg', 'shDlg', 'clrDlg', 'stepsSheet', 'runDlg', 'blockInfo', 'taskSheet', 'ed', 'fabMenu'];
 function handleBack(){
   for (const id of BACK_ORDER){
     const d = document.getElementById(id);
     if (!d || !d.open) continue;
-    const x = id === 'fabMenu' ? null : d.querySelector('#tdl_x,#tde_x,#qa_x,#wl_skip,#sc_x,#ip_x,#mv_x,#snap_x,#sh_x,#clr_x,#runClose,#ss_close,#e_x');
+    const x = id === 'fabMenu' ? null : d.querySelector('#tg_x,#tdl_x,#tde_x,#qa_x,#wl_skip,#sc_x,#ip_x,#mv_x,#snap_x,#sh_x,#clr_x,#runClose,#ss_close,#e_x');
     if (x) x.click(); else d.close();
     return true;
   }
@@ -2885,3 +2965,5 @@ buildSettings();
 
 // Loading screen: leave once everything is drawn. In the Android app it stays for at least 6 seconds so the dots are seen.
 window.__bootMin = IS_NATIVE ? 6000 : 0; if (window.__bootOff) window.__bootOff();
+window.__bootReady = true;      // the app has loaded: from here (and after a short moment) a tap on the loading screen skips it
+setTimeout(() => { const b = document.getElementById('boot'); if (b) b.classList.add('ready'); }, Math.max(0, 1200 - (Date.now() - (window.__t0 || Date.now()))));

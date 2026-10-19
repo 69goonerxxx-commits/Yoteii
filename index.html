@@ -13,13 +13,15 @@
 /* Loading screen: the five dots from the app icon, rippling */
 #boot{position:fixed;inset:0;z-index:2147483000;background:#0a1226;display:flex;align-items:center;justify-content:center;transition:opacity .35s ease}
 #boot.out{opacity:0;pointer-events:none}
+#boot .skip{position:absolute;left:0;right:0;bottom:calc(36px + env(safe-area-inset-bottom,0px));text-align:center;font:500 13px 'Poppins',system-ui,sans-serif;color:#9fb0d0;opacity:0;transition:opacity .5s ease;margin:0}
+#boot.ready .skip{opacity:.85}
 #boot svg{width:min(62vw,260px);height:auto;overflow:visible}
 #boot .bd{transform-box:fill-box;transform-origin:center;animation:bootDot 1.3s ease-in-out infinite}
 #boot .d2{animation-delay:.14s}#boot .d3{animation-delay:.28s}#boot .d4{animation-delay:.42s}#boot .d5{animation-delay:.56s}
 @keyframes bootDot{0%,70%,100%{transform:scale(1);opacity:.45}35%{transform:scale(1.45);opacity:1}}
 @media (prefers-reduced-motion:reduce){#boot .bd{animation:none;opacity:1}}
 </style>
-<script>window.__t0=Date.now();window.__bootMin=0;window.__bootOff=function(now){var b=document.getElementById('boot');if(!b)return;var go=function(){b.classList.add('out');setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b);var f=window.__afterBoot;window.__afterBoot=null;if(f)f()},400)};if(now)go();else setTimeout(go,Math.max(0,window.__bootMin-(Date.now()-window.__t0)))};setTimeout(function(){window.__bootOff(true)},9000);</script>
+<script>window.__t0=Date.now();window.__bootMin=0;window.__bootOff=function(now){var b=document.getElementById('boot');if(!b)return;var go=function(){b.classList.add('out');setTimeout(function(){if(b.parentNode)b.parentNode.removeChild(b);var f=window.__afterBoot;window.__afterBoot=null;if(f)f()},400)};if(now)go();else setTimeout(go,Math.max(0,window.__bootMin-(Date.now()-window.__t0)))};setTimeout(function(){window.__bootOff(true)},9000);window.__bootSkip=function(){if(window.__bootReady&&Date.now()-window.__t0>=1200)window.__bootOff(true)};</script>
 <script>
 /* Startup safety net: if a file fails to load or the app crashes, say so in plain words and let the person save their data. */
 (function(){
@@ -129,7 +131,7 @@
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<div id="boot" role="status" aria-label="Loading Yotei"><svg viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="220" r="118" fill="none" stroke="#1d4ed8" stroke-width="16" opacity="0.6"/><circle cx="256" cy="220" r="118" fill="none" stroke="#60a5fa" stroke-width="3" opacity="0.4"/><polyline points="194,222 240,268 320,176" fill="none" stroke="#60a5fa" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/><circle class="bd d1" cx="208" cy="396" r="7" fill="#1d4ed8"/><circle class="bd d2" cx="232" cy="396" r="7" fill="#1d4ed8"/><circle class="bd d3" cx="256" cy="396" r="7" fill="#3b82f6"/><circle class="bd d4" cx="280" cy="396" r="7" fill="#3b82f6"/><circle class="bd d5" cx="304" cy="396" r="7" fill="#60a5fa"/></svg></div>
+<div id="boot" role="status" aria-label="Loading Yotei" onclick="window.__bootSkip&&window.__bootSkip()"><svg viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="220" r="118" fill="none" stroke="#1d4ed8" stroke-width="16" opacity="0.6"/><circle cx="256" cy="220" r="118" fill="none" stroke="#60a5fa" stroke-width="3" opacity="0.4"/><polyline points="194,222 240,268 320,176" fill="none" stroke="#60a5fa" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/><circle class="bd d1" cx="208" cy="396" r="7" fill="#1d4ed8"/><circle class="bd d2" cx="232" cy="396" r="7" fill="#1d4ed8"/><circle class="bd d3" cx="256" cy="396" r="7" fill="#3b82f6"/><circle class="bd d4" cx="280" cy="396" r="7" fill="#3b82f6"/><circle class="bd d5" cx="304" cy="396" r="7" fill="#60a5fa"/></svg><p class="skip">Tap to skip</p></div>
 <div class="app">
   <div class="top"><h1 id="hdrTitle">Yotei</h1><div class="hdrR"><div class="dateWrap hdrCal"><button class="date" id="dateBtn" aria-label="Pick a date"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></button><input type="date" id="datePick" aria-label="Pick a date" tabindex="-1"></div></div><span id="date" class="srOnly"></span><span id="clk"></span><button id="editDone" type="button" aria-label="Done editing">Done</button><button id="settingsBtn" aria-label="Settings">⚙</button></div>
   <section id="tab-inbox" class="tab" hidden></section>
@@ -294,6 +296,7 @@
   <div class="er"><label>Due date<input id="tde_d" type="date"></label><label>Time (optional)<input id="tde_tm" type="time"></label></div>
   <div class="chips" id="tde_chips"><button type="button" data-q="0">Today</button><button type="button" data-q="1">Tomorrow</button><button type="button" data-q="7">Next week</button><button type="button" data-q="nd">No date</button><button type="button" data-q="nt">No time</button></div>
   <label>Repeat<select id="tde_rep"><option value="">Does not repeat</option><option value="d">Every day</option><option value="wd">Weekdays</option><option value="w">Every week</option><option value="m">Every month</option><option value="y">Every year</option></select></label>
+  <div class="sdWrap"><span class="sdLab">Tags</span><div id="tde_tags" class="tgRow"></div></div>
   <div class="chips"><button type="button" id="tde_star" aria-pressed="false">&#9733; Starred</button></div>
   <label>Note<textarea id="tde_note" rows="2" placeholder="Anything worth remembering"></textarea></label>
   <div class="sdWrap"><span class="sdLab">Subtasks <em id="tde_stepsN"></em></span><div id="tde_steps"></div><button type="button" id="tde_stepAdd" class="sdAdd">+ Add subtask</button></div>
@@ -303,8 +306,15 @@
 </div></dialog>
 <dialog id="tdlDlg"><div class="ef">
   <h2 id="tdl_title">New list</h2>
-  <input id="tdl_t" maxlength="24" autocomplete="off" placeholder="List name" aria-label="List name">
+  <div class="taskRow"><input id="tdl_t" maxlength="24" autocomplete="off" placeholder="List name" aria-label="List name"><button type="button" id="tdl_iconBtn" class="iconPreview" aria-label="Choose icon">+</button><input type="hidden" id="tdl_icon"></div>
+  <label>Colour<div class="colorRow" id="tdl_colors" role="radiogroup" aria-label="Colour"></div><input type="hidden" id="tdl_color"></label>
   <div class="ea"><button type="button" id="tdl_del" class="danger">Delete list</button><button type="button" id="tdl_x">Cancel</button><button type="button" id="tdl_ok">Save</button></div>
+</div></dialog>
+<dialog id="tgDlg"><div class="ef">
+  <h2 id="tg_title">New tag</h2>
+  <input id="tg_t" maxlength="20" autocomplete="off" placeholder="Tag name, like errands" aria-label="Tag name">
+  <label>Colour<div class="colorRow" id="tg_colors" role="radiogroup" aria-label="Colour"></div><input type="hidden" id="tg_color"></label>
+  <div class="ea"><button type="button" id="tg_del" class="danger">Delete tag</button><button type="button" id="tg_x">Cancel</button><button type="button" id="tg_ok">Save</button></div>
 </div></dialog>
 <dialog id="welDlg" aria-label="Welcome to Yotei"><div class="wlIn">
   <button type="button" id="wl_skip" class="wlSkip">Skip</button>

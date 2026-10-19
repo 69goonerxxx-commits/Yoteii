@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.1.2';
+export const APP_VERSION = '3.1.3';
 export const FEATURES = [
   'A daily timeline built from your wake time, split into seven energy windows',
   'Morning and Night Routines that shrink (optional, then flexible, then core) to fit',
@@ -25,6 +25,17 @@ export const LIMITS = [
   'Calendar import is a one-time copy of timed events, not a live sync'
 ];
 export const CHANGELOG = [
+  { v:'3.1.3', date:'Oct 2026',
+    added:[
+      'Six themes to pick from in Settings: Dark, Light, Midnight (true black), Slate, Forest and Warm paper, plus Match device',
+      'Eight accent colours (Blue, Teal, Green, Amber, Orange, Red, Pink and Purple) that work with every theme, 48 combinations in all',
+      'Every list has its own icon and colour, picked from the same icons and colour ring as tasks. They show on the list chip, on the card edge and in the calendar dots',
+      'Tags for to-dos: add several to a to-do, give each tag a colour, share them across every list, and tap a tag to filter. Edit or delete a tag from the Tags row',
+      'Tap the loading screen to skip it once the app has loaded'
+    ],
+    changed:[
+      'Text on buttons and highlights now picks black or white to stay readable on whichever accent colour you choose'
+    ] },
   { v:'3.1.2', date:'Oct 2026',
     added:[
       'Calendar view for the To-do tab: tap the calendar button to see a month with dots on the days that have to-dos, tap a day to see its to-dos, and add one for that day',

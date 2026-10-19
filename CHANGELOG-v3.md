@@ -2,6 +2,12 @@
 
 Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 entry in `about.js`.
 
+## 3.1.3
+- Loading screen: #boot has an onclick (__bootSkip) that only works once main.js has set __bootReady and 1.2s have passed since __t0; a "Tap to skip" hint fades in at the same moment.
+- Themes: util.js has PALS (id, name, base light|dark) and ACCENTS (a dark-surface and a light-surface value each). styles.css defines each surface as :root[data-pal=...] (dark and light stay the default :root and :root[data-theme=light] blocks; the new ones reuse the base light or dark rules). applyLook() sets data-theme (the base), data-pal, and the inline --accent and --onacc (black or white, whichever contrasts more). tests/themes.test.mjs checks every theme and accent combination for contrast (text 7:1, secondary text 4.5:1, accent 3:1 on bg and card, text on accent 4.5:1). Fixed-colour text on accent fills was changed to var(--onacc).
+- List icon and colour: todoLists items gain `ic` (an icon key, default checklist) and `c` (a colour, missing means the accent for the main list or the old rotation for others). #tdlDlg has the icon button and the colour ring; the icon picker takes a target (ipTarget/ipSet) so it can serve the task editor and the list dialog.
+- Tags: key `todoTags` ([{ id, name, c }]) shared by all lists, `tags` (array of tag ids) on a to-do. #tgDlg creates, edits and deletes (deleting also removes it from every to-do, with Undo). The to-do editor has a Tags row with + New tag; the list screen has a Tags filter row (tdTag, one tag at a time, combined with the selected list or smart view) and works in the calendar view too.
+
 ## 3.1.2
 - Smart views: chips `sv:today` (due today or earlier), `sv:upcoming` (due after today) and `sv:starred`, filtered by tdIn(); each shows a count of open to-dos. tdSel can be 'all', a smart view or a list id, so anything that needs a real list uses tdListSel(). A new to-do inherits the view (due today, due tomorrow, or starred).
 - Calendar view: `todoPrefs.mode` is 'list' or 'cal'. tdCalHtml() draws a Monday-first month grid with up to three dots per day (list colour, red when overdue) and the selected day's to-dos below, using the same cards. Picking a smart view while in the calendar switches back to the list.
