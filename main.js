@@ -806,7 +806,12 @@ $('#e_ok').onclick = () => {
   needLive();
   if (old0) arr[arr.indexOf(old0)] = b; else arr.push(b);
   if (cur.fromInbox) store.set('inbox', store.get('inbox', []).filter(x => x.id !== cur.fromInbox));
-  if (cur.fromTodo){ store.set('todos', store.get('todos', []).filter(x => x.id !== cur.fromTodo)); drawTodo(); }
+  if (cur.fromTodo){
+    const tl = store.get('todos', []), src = tl.find(x => x.id === cur.fromTodo);
+    if (src && src.rep && src.due){ tdAdvance(src); store.set('todos', tl); }      // a repeating to-do stays and moves to its next date
+    else store.set('todos', tl.filter(x => x.id !== cur.fromTodo));
+    drawTodo();
+  }
   setBlocks(cur.l, arr); $('#ed').close(); render();
 };
 $('#e_x2').onclick = () => $('#e_x').click();
@@ -1652,11 +1657,12 @@ function drawInbox(){
   const el = $('#inboxCard'); if (!el) return;
   const list = store.get('inbox', []);
   const btn = '<button class="inNew" id="inNew">' + IN_PLUS + '<span>New Inbox Task</span></button>';
-  const items = list.map(x => '<div class="inItem"><span>' + esc(x.t) + '</span><span class="inAct"><button data-sch="' + x.id + '">Schedule</button><button data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></span></div>').join('');
+  const items = list.map(x => '<div class="inCard"><div class="inMain"><span class="inT">' + esc(x.t) + '</span><button type="button" class="inGo" data-sch="' + x.id + '">' + IN_CAL + 'Schedule</button></div><button type="button" class="inRm" data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></div>').join('');
   el.innerHTML = list.length
-    ? btn + '<div class="inList">' + items + '</div>'
+    ? btn + '<div class="inCards">' + items + '</div>'
     : '<div class="inEmpty"><div class="inIcon">' + IN_TRAY + '</div><h2>Your Unscheduled Thoughts</h2><p class="wn">Capture tasks and thoughts as they come. Move them to your timeline when you\u2019re ready to schedule.</p>' + btn + '</div>';
 }
+const IN_CAL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>';
 function openInboxComposer(){ setTab('inbox'); openQuickAdd(); }
 $('#inboxCard').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
@@ -1685,7 +1691,36 @@ $('#qa_x').onclick = () => $('#qaDlg').close();
 $('#qa_t').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); qaSave(); } });
 
 // ---- To-do tab: lists as chips, star, due date, subtasks, drag to reorder, sort, show done ----
-let tdSel = 'all';       // the chip that is selected: 'all' or a list id
+let tdSel = 'all';       // the chip that is selected: 'all', a smart view ('sv:today' | 'sv:upcoming' | 'sv:starred'), or a list id
+let tdCalMonth = null, tdCalDay = null;   // calendar view: the month shown (YYYY-MM-01) and the selected day
+const TD_SMART = [['sv:today', 'Today'], ['sv:upcoming', 'Upcoming'], ['sv:starred', 'Starred']];
+const tdIsSmart = s => String(s).startsWith('sv:');
+function tdListSel(ls){ return (ls || tdLists()).some(z => z.id === tdSel) ? tdSel : 'main'; }   // the list a new to-do goes into
+function tdName(sel, ls){ const s = TD_SMART.find(z => z[0] === sel); return s ? s[1] : ((ls || tdLists()).find(z => z.id === sel) || { name:'Tasks' }).name; }
+function tdIn(x, sel, ls){        // is this to-do part of the selected view?
+  const td = todayStr();
+  if (sel === 'all') return true;
+  if (sel === 'sv:today') return !!x.due && x.due <= td;       // today and overdue
+  if (sel === 'sv:upcoming') return !!x.due && x.due > td;
+  if (sel === 'sv:starred') return !!x.star;
+  return tdListOf(x, ls) === sel;
+}
+const TD_REP = { d:'Daily', wd:'Weekdays', w:'Weekly', m:'Monthly', y:'Yearly' };
+const TD_LOOP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l3 3-3 3M20 5H8a4 4 0 0 0-4 4v1M7 22l-3-3 3-3M4 19h12a4 4 0 0 0 4-4v-1"/></svg>';
+function tdNext(x){        // the next due date of a repeating to-do: after its current date, and never before today
+  const td = todayStr(); let d = parseDay(x.due), n = 0;
+  const step = () => {
+    const y = d.getFullYear(), mo = d.getMonth(), dd = d.getDate();
+    if (x.rep === 'd') d = new Date(y, mo, dd + 1);
+    else if (x.rep === 'wd'){ d = new Date(y, mo, dd + 1); while (d.getDay() === 0 || d.getDay() === 6) d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1); }
+    else if (x.rep === 'w') d = new Date(y, mo, dd + 7);
+    else if (x.rep === 'm') d = new Date(y, mo + 1, Math.min(dd, new Date(y, mo + 2, 0).getDate()));
+    else d = new Date(y + 1, mo, Math.min(dd, new Date(y + 1, mo + 1, 0).getDate()));
+  };
+  do { step(); } while (isoLocal(d) < td && ++n < 800);
+  return isoLocal(d);
+}
+function tdAdvance(it){ it.due = tdNext(it); if (Array.isArray(it.steps)) it.steps.forEach(s => { s.d = false; }); }   // done once: on to the next date
 const tdOpen = new Set();   // to-dos whose subtasks and note are showing
 const IN_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg>';
 const TD_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>';
@@ -1693,7 +1728,7 @@ const TD_STEP = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" w
 const TD_NOTE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>';
 function tdLists(){ const s = store.get('todoLists', null), a = Array.isArray(s) ? s.filter(x => x && x.id).slice() : []; if (!a.some(x => x.id === 'main')) a.unshift({ id:'main', name:'Tasks' }); return a; }
 function tdListOf(x, ls){ return x.l && (ls || tdLists()).some(z => z.id === x.l) ? x.l : 'main'; }
-function tdPrefs(){ return Object.assign({ sort:'mine', done:true }, store.get('todoPrefs', {})); }
+function tdPrefs(){ const p = Object.assign({ sort:'date', done:true, hide:[], mode:'list' }, store.get('todoPrefs', {})); if (p.sort === 'due') p.sort = 'date'; return p; }
 function tdSetPref(k, v){ const p = store.get('todoPrefs', {}); p[k] = v; store.set('todoPrefs', p); }
 const tdMin = s => { const z = /^(\d{2}):(\d{2})$/.exec(s || ''); return z ? +z[1] * 60 + +z[2] : null; };
 function tdDue(x){        // the due label, and whether the to-do is overdue
@@ -1702,59 +1737,117 @@ function tdDue(x){        // the due label, and whether the to-do is overdue
   const mins = tdMin(x.dt), late = !x.done && (x.due < td || (x.due === td && mins !== null && mins < nowM()));
   const day = x.due === td ? 'Today' : x.due === n(1) ? 'Tomorrow' : x.due === n(-1) ? 'Yesterday'
     : parseDay(x.due).toLocaleDateString(undefined, Object.assign({ weekday:'short', month:'short', day:'numeric' }, x.due.slice(0, 4) !== td.slice(0, 4) ? { year:'numeric' } : {}));
-  return { late, text:(late ? 'Overdue \u00b7 ' : '') + day + (mins !== null ? ', ' + fmt(mins).join(' ') : '') };
+  return { late, today:x.due === td, text:(late ? 'Overdue \u00b7 ' : '') + day + (mins !== null ? ', ' + fmt(mins).join(' ') : '') };
 }
+const TD_COLORS = ['#5e96cb', '#22c55e', '#f59e0b', '#ec4899', '#a78bfa', '#14b8a6'];
+const TD_CAL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>';
+const TD_SECS = [['late', 'Overdue'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['upcoming', 'Upcoming'], ['none', 'No date']];
 function drawTodo(){
   const el = $('#todoCard'); if (!el) return;
-  const lists = tdLists(); if (tdSel !== 'all' && !lists.some(x => x.id === tdSel)) tdSel = 'all';
-  const P = tdPrefs(), all = store.get('todos', []), view = all.filter(x => tdSel === 'all' || tdListOf(x, lists) === tdSel);
+  const lists = tdLists(); if (tdSel !== 'all' && !tdIsSmart(tdSel) && !lists.some(x => x.id === tdSel)) tdSel = 'all';
+  const P = tdPrefs(), all = store.get('todos', []), view = all.filter(x => tdIn(x, tdSel, lists)), isList = lists.some(x => x.id === tdSel), showCal = P.mode === 'cal' && !tdIsSmart(tdSel);
   const nameOf = id => (lists.find(x => x.id === id) || lists[0]).name;
-  const chips = '<div class="tdChips" role="tablist" aria-label="Lists">' + [{ id:'all', name:'All' }].concat(lists).map(x => '<button type="button" role="tab" class="tdChip' + (x.id === tdSel ? ' on' : '') + '" data-ls="' + x.id + '" aria-selected="' + (x.id === tdSel) + '">' + esc(x.name) + '</button>').join('') + '<button type="button" class="tdChip tdAddL" data-ls="+" aria-label="New list">+</button></div>';
+  const chips = '<div class="tdChipsW"><div class="tdChips" role="tablist" aria-label="Lists">' + [{ id:'all', name:'All' }].concat(TD_SMART.map(z => ({ id:z[0], name:z[1], sv:true })), lists).map(x => '<button type="button" role="tab" class="tdChip' + (x.id === tdSel ? ' on' : '') + '" data-ls="' + x.id + '" aria-selected="' + (x.id === tdSel) + '">' + esc(x.name) + (x.sv ? '<span class="tdCn">' + all.filter(z => !z.done && tdIn(z, x.id, lists)).length + '</span>' : '') + '</button>').join('') + '</div><button type="button" class="tdChip tdAddL" data-ls="+" aria-label="New list">+</button></div>';
   const btn = '<button class="inNew" id="tdNew">' + IN_PLUS + '<span>New To-do</span></button>';
-  if (!view.length){
-    el.innerHTML = chips + '<div class="inEmpty"><div class="inIcon">' + IN_CHECK + '</div><h2>' + (tdSel === 'all' ? 'Your To-do List' : esc(nameOf(tdSel))) + '</h2><p class="wn">' + (tdSel === 'all' ? 'A simple checklist for things to get done. Add a date if it has a deadline, and tick them off as you go.' : 'Nothing in this list yet.') + '</p>' + btn + (tdSel !== 'all' ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
+  if (!view.length && !showCal){
+    el.innerHTML = chips + '<div class="inEmpty"><div class="inIcon">' + IN_CHECK + '</div><h2>' + (tdSel === 'all' ? 'Your To-do List' : esc(tdName(tdSel, lists))) + '</h2><p class="wn">' + (tdSel === 'all' ? 'A simple checklist for things to get done. Add a date if it has a deadline, and tick them off as you go.' : 'Nothing here yet.') + '</p>' + btn + (isList ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
     return;
   }
+  const td = todayStr(), tmr = (() => { const d = parseDay(td); d.setDate(d.getDate() + 1); return isoLocal(d); })();
+  const isLate = x => { const d = tdDue(x); return !!(d && d.late); };
+  const bucket = x => !x.due ? 'none' : isLate(x) ? 'late' : x.due === td ? 'today' : x.due === tmr ? 'tomorrow' : x.due > tmr ? 'upcoming' : 'late';
   const open = view.filter(x => !x.done), dn = view.filter(x => x.done);
   const dueKey = x => (x.due || '9999-99-99') + ' ' + (x.dt || '99:99');
-  const sortFn = P.sort === 'az' ? (a, b) => a.t.localeCompare(b.t) : P.sort === 'new' ? (a, b) => String(b.id).localeCompare(String(a.id)) : P.sort === 'due' ? (a, b) => dueKey(a).localeCompare(dueKey(b)) : null;
+  const starFirst = (a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0);
+  const sortFn = P.sort === 'az' ? (a, b) => a.t.localeCompare(b.t) : P.sort === 'new' ? (a, b) => String(b.id).localeCompare(String(a.id)) : null;
   const arrange = a => sortFn ? a.slice().sort(sortFn) : a;
-  const drag = P.sort === 'mine';
-  const row = x => {
+  const row = (x, canDrag) => {
+    const li = lists.findIndex(z => z.id === tdListOf(x, lists)), lc = li <= 0 ? 'var(--accent)' : TD_COLORS[li % TD_COLORS.length];
     const di = tdDue(x), st = Array.isArray(x.steps) ? x.steps : [], nd = st.filter(s => s.d).length, ex = tdOpen.has(x.id) && (st.length || x.note);
-    const tagTxt = lists.length > 1 && tdSel === 'all' ? '<span class="tdTag">' + esc(nameOf(tdListOf(x, lists))) + '</span>' : '';
+    const tagTxt = lists.length > 1 && !isList ? '<span class="tdTag">' + esc(nameOf(tdListOf(x, lists))) + '</span>' : '';
     const exBtn = (ic, txt, lab) => '<button type="button" class="tdMb" data-ex="' + x.id + '" aria-expanded="' + !!ex + '" aria-label="' + lab + '">' + ic + txt + '</button>';
-    const meta = (di ? '<span class="tdDue' + (di.late ? ' late' : '') + '">' + esc(di.text) + '</span>' : '') +
+    const meta = (di ? '<span class="tdDue' + (di.late ? ' late' : di.today ? ' today' : '') + '">' + TD_CAL + esc(di.text) + '</span>' : '') + (x.rep && TD_REP[x.rep] ? '<span class="tdRep">' + TD_LOOP + TD_REP[x.rep] + '</span>' : '') +
       (st.length ? exBtn(TD_STEP, nd + '/' + st.length, 'Subtasks, ' + nd + ' of ' + st.length + ' done') : '') + (x.note ? exBtn(TD_NOTE, '', 'Note') : '') + tagTxt;
     const exp = ex ? '<div class="tdExp">' + st.map((s, i) => '<button type="button" class="tdStp' + (s.d ? ' done' : '') + '" data-sg="' + x.id + '" data-si="' + i + '"><span class="tdSc"></span><span>' + esc(s.t) + '</span></button>').join('') + (x.note ? '<div class="tdNote">' + esc(x.note) + '</div>' : '') + '</div>' : '';
-    return '<div class="tdItem' + (x.done ? ' done' : '') + '" data-id="' + x.id + '"><button class="tdChk" data-tg="' + x.id + '" aria-pressed="' + (x.done ? 'true' : 'false') + '" aria-label="' + (x.done ? 'Mark not done: ' : 'Mark done: ') + esc(x.t) + '"></button>' +
+    return '<div class="tdItem' + (x.done ? ' done' : '') + '" data-id="' + x.id + '" style="--lc:' + lc + '"><button class="tdChk" data-tg="' + x.id + '" aria-pressed="' + (x.done ? 'true' : 'false') + '" aria-label="' + (x.done ? 'Mark not done: ' : 'Mark done: ') + esc(x.t) + '"></button>' +
       '<div class="tdMain"><button class="tdTxt" data-ed="' + x.id + '">' + esc(x.t) + '</button>' + (meta ? '<div class="tdMeta">' + meta + '</div>' : '') + exp + '</div>' +
-      (x.done ? '' : '<button class="tdStar' + (x.star ? ' on' : '') + '" data-st="' + x.id + '" aria-pressed="' + (x.star ? 'true' : 'false') + '" aria-label="' + (x.star ? 'Remove star: ' : 'Star: ') + esc(x.t) + '">' + TD_STAR + '</button>') +
-      (!x.done && drag ? '<span class="tdH" aria-label="Drag to reorder" title="Drag to reorder">&#8942;&#8942;</span>' : '') +
-      '<button class="tdRm" data-rm="' + x.id + '" aria-label="Delete ' + esc(x.t) + '">&times;</button></div>';
+      ((!x.done || (canDrag && !x.done)) ? '<div class="tdSide">' + (x.done ? '' : '<button class="tdStar' + (x.star ? ' on' : '') + '" data-st="' + x.id + '" aria-pressed="' + (x.star ? 'true' : 'false') + '" aria-label="' + (x.star ? 'Remove star: ' : 'Star: ') + esc(x.t) + '">' + TD_STAR + '</button>') + (!x.done && canDrag ? '<span class="tdH" aria-label="Drag to reorder" title="Drag to reorder">&#8942;&#8942;</span>' : '') + '</div>' : '') + '</div>';
   };
-  const grp = (a, g) => a.length ? '<div class="tdList" data-grp="' + g + '">' + a.map(row).join('') + '</div>' : '';
-  const isLate = x => { const d = tdDue(x); return !!(d && d.late); };
+  const grp = (a, g, canDrag) => a.length ? '<div class="tdList" data-grp="' + g + '">' + a.map(x => row(x, canDrag)).join('') + '</div>' : '';
   const opt = (v, t) => '<option value="' + v + '"' + (P.sort === v ? ' selected' : '') + '>' + t + '</option>';
-  const bar = '<div class="tdBar"><label class="tdSortL"><span>Sort</span><select id="td_sort" aria-label="Sort by">' + opt('mine', 'My order') + opt('due', 'Due date') + opt('az', 'A to Z') + opt('new', 'Newest first') + '</select></label>' + (tdSel !== 'all' ? '<button type="button" class="tdLink" id="tdListEdit">Edit list</button>' : '') + '</div>';
-  el.innerHTML = chips + btn + bar + grp(arrange(open.filter(x => x.star)), 'star') + grp(arrange(open.filter(x => !x.star && isLate(x))), 'late') + grp(arrange(open.filter(x => !x.star && !isLate(x))), 'norm') +
-    (dn.length ? '<p class="tdSub"><button type="button" id="tdDoneTog" aria-expanded="' + P.done + '">Done (' + dn.length + ')<svg viewBox="0 0 24 24" aria-hidden="true" class="' + (P.done ? 'open' : '') + '"><path d="M6 9l6 6 6-6"/></svg></button><button type="button" id="tdClear">Clear done</button></p>' + (P.done ? grp(arrange(dn), 'done') : '') : '');
+  const vt = '<div class="tdView" role="group" aria-label="View"><button type="button" data-vm="list" aria-pressed="' + !showCal + '" aria-label="List view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></button><button type="button" data-vm="cal" aria-pressed="' + showCal + '" aria-label="Calendar view">' + TD_CAL + '</button></div>';
+  const edl = isList ? '<button type="button" class="tdEdl" id="tdListEdit" aria-label="Edit list"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>' : '';
+  if (showCal){ el.innerHTML = chips + '<div class="tdBar"><span></span><div class="tdBarR">' + vt + edl + '</div></div>' + tdCalHtml(view, grp, lists); return; }
+  const bar = '<div class="tdBar"><label class="tdSortL"><span>Sort</span><select id="td_sort" aria-label="Sort by">' + opt('date', 'By date') + opt('mine', 'My order') + opt('az', 'A to Z') + opt('new', 'Newest first') + '</select></label><div class="tdBarR">' + vt + edl + '</div></div>';
+  let body = '';
+  if (P.sort === 'date'){
+    const hide = new Set(P.hide || []);
+    TD_SECS.forEach(([k, label]) => {
+      const items = open.filter(x => bucket(x) === k).sort((a, b) => starFirst(a, b) || (k === 'none' ? 0 : dueKey(a).localeCompare(dueKey(b))));
+      if (!items.length) return;
+      const o = !hide.has(k);
+      body += '<section class="tdSec' + (k === 'late' ? ' late' : '') + '"><button type="button" class="tdSecH" data-sec="' + k + '" aria-expanded="' + o + '"><span>' + label + '</span><span class="tdN">' + items.length + '</span><svg viewBox="0 0 24 24" aria-hidden="true" class="' + (o ? 'open' : '') + '"><path d="M6 9l6 6 6-6"/></svg></button>' + (o ? grp(items, k, k === 'none') : '') + '</section>';
+    });
+  } else {
+    const drag = P.sort === 'mine';
+    body = grp(arrange(open.filter(x => x.star)), 'star', drag) + grp(arrange(open.filter(x => !x.star && isLate(x))), 'late', drag) + grp(arrange(open.filter(x => !x.star && !isLate(x))), 'norm', drag);
+  }
+  el.innerHTML = chips + btn + bar + body +
+    (dn.length ? '<p class="tdSub"><button type="button" id="tdDoneTog" aria-expanded="' + P.done + '">Done (' + dn.length + ')<svg viewBox="0 0 24 24" aria-hidden="true" class="' + (P.done ? 'open' : '') + '"><path d="M6 9l6 6 6-6"/></svg></button><button type="button" id="tdClear">Clear done</button></p>' + (P.done ? grp(arrange(dn), 'done', false) : '') : '');
+}
+function tdCalHtml(view, grp, lists){
+  const td = todayStr();
+  if (!tdCalMonth) tdCalMonth = td.slice(0, 7) + '-01';
+  if (!tdCalDay) tdCalDay = td;
+  const m0 = parseDay(tdCalMonth), y = m0.getFullYear(), mo = m0.getMonth();
+  const first = new Date(y, mo, 1), lead = (first.getDay() + 6) % 7, dim = new Date(y, mo + 1, 0).getDate();
+  const byDay = {}; view.forEach(x => { if (x.due) (byDay[x.due] = byDay[x.due] || []).push(x); });
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<span class="calC off"></span>');
+  for (let d = 1; d <= dim; d++){
+    const iso = isoLocal(new Date(y, mo, d)), its = byDay[iso] || [], open = its.filter(x => !x.done);
+    const dots = open.slice(0, 3).map(x => { const li = lists.findIndex(z => z.id === tdListOf(x, lists)); return '<i style="background:' + (x.due < td ? 'var(--bad)' : li <= 0 ? 'var(--accent)' : TD_COLORS[li % TD_COLORS.length]) + '"></i>'; }).join('');
+    cells.push('<button type="button" class="calC' + (iso === td ? ' today' : '') + (iso === tdCalDay ? ' sel' : '') + '" data-cd="' + iso + '" aria-pressed="' + (iso === tdCalDay) + '" aria-label="' + esc(parseDay(iso).toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' })) + ', ' + open.length + ' to do"><b>' + d + '</b><span class="calD">' + dots + '</span></button>');
+  }
+  const head = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(n => '<span>' + n + '</span>').join('');
+  const day = byDay[tdCalDay] || [], o = day.filter(x => !x.done), dn = day.filter(x => x.done);
+  const chev = d => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>';
+  return '<div class="calHead"><button type="button" class="calNav" data-cm="-1" aria-label="Previous month">' + chev('M15 6l-6 6 6 6') + '</button><h2>' + esc(first.toLocaleDateString(undefined, { month:'long', year:'numeric' })) + '</h2><button type="button" class="calNav" data-cm="1" aria-label="Next month">' + chev('M9 6l6 6-6 6') + '</button><button type="button" class="tdLink" data-cm="0">Today</button></div>' +
+    '<div class="calGrid calWd" aria-hidden="true">' + head + '</div><div class="calGrid">' + cells.join('') + '</div>' +
+    '<div class="calDay"><h3>' + esc(parseDay(tdCalDay).toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' })) + '</h3>' + (o.length ? grp(o, 'cal', false) : '') +
+    (dn.length ? '<p class="tdSub"><span>Done (' + dn.length + ')</span></p>' + grp(dn, 'caldone', false) : '') + (!day.length ? '<p class="wn">Nothing due on this day.</p>' : '') +
+    '<button type="button" class="tdLink" id="calAdd">+ Add a to-do for this day</button></div>';
 }
 $('#todoCard').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.ls){ if (b.dataset.ls === '+') openListDlg(null); else { tdSel = b.dataset.ls; drawTodo(); } return; }
+  if (b.dataset.vm){ tdSetPref('mode', b.dataset.vm); if (b.dataset.vm === 'cal' && tdIsSmart(tdSel)) tdSel = 'all'; drawTodo(); return; }
+  if (b.dataset.cd){ tdCalDay = b.dataset.cd; drawTodo(); return; }
+  if (b.dataset.cm !== undefined){
+    const n = +b.dataset.cm, td = todayStr();
+    if (n === 0){ tdCalMonth = td.slice(0, 7) + '-01'; tdCalDay = td; }
+    else { const d = parseDay(tdCalMonth || td.slice(0, 7) + '-01'); d.setMonth(d.getMonth() + n, 1); tdCalMonth = isoLocal(d); tdCalDay = tdCalMonth.slice(0, 7) === td.slice(0, 7) ? td : tdCalMonth; }
+    drawTodo(); return;
+  }
+  if (b.id === 'calAdd'){ openTodoEd(null, { due:tdCalDay }); return; }
   if (b.id === 'tdNew'){ openTodoEd(null); return; }
   if (b.id === 'tdListEdit'){ openListDlg(tdSel); return; }
   if (b.id === 'tdDoneTog'){ tdSetPref('done', !tdPrefs().done); drawTodo(); return; }
+  if (b.dataset.sec){ const h = new Set(tdPrefs().hide || []); if (h.has(b.dataset.sec)) h.delete(b.dataset.sec); else h.add(b.dataset.sec); tdSetPref('hide', [...h]); drawTodo(); return; }
   if (b.dataset.ex){ if (tdOpen.has(b.dataset.ex)) tdOpen.delete(b.dataset.ex); else tdOpen.add(b.dataset.ex); drawTodo(); return; }
   const l = store.get('todos', []);
-  if (b.dataset.tg){ const it = l.find(x => x.id === b.dataset.tg); if (it){ it.done = !it.done; store.set('todos', l); drawTodo(); try{ if (it.done && navigator.vibrate) navigator.vibrate(15); }catch{} } }
+  if (b.dataset.tg){
+    const it = l.find(x => x.id === b.dataset.tg);
+    if (it && !it.done && it.rep && it.due){        // a repeating to-do: ticking it moves it to its next date
+      const _s = grab(); tdAdvance(it); store.set('todos', l); drawTodo(); try{ if (navigator.vibrate) navigator.vibrate(15); }catch{}
+      showUndo('Done. Next: ' + (tdDue(it) || { text:it.due }).text, _s);
+    } else if (it){ it.done = !it.done; store.set('todos', l); drawTodo(); try{ if (it.done && navigator.vibrate) navigator.vibrate(15); }catch{} }
+  }
   else if (b.dataset.st){ const it = l.find(x => x.id === b.dataset.st); if (it){ if (it.star) delete it.star; else it.star = true; store.set('todos', l); drawTodo(); } }
   else if (b.dataset.sg){ const it = l.find(x => x.id === b.dataset.sg), s = it && Array.isArray(it.steps) ? it.steps[+b.dataset.si] : null; if (s){ s.d = !s.d; store.set('todos', l); drawTodo(); } }
   else if (b.dataset.ed) openTodoEd(b.dataset.ed);
-  else if (b.dataset.rm){ const _s = grab(); store.set('todos', l.filter(x => x.id !== b.dataset.rm)); drawTodo(); showUndo('To-do removed', _s); }
   else if (b.id === 'tdClear'){
-    const ls = tdLists(), _s = grab(); store.set('todos', l.filter(x => !(x.done && (tdSel === 'all' || tdListOf(x, ls) === tdSel)))); drawTodo(); showUndo('Cleared the done to-dos', _s);
+    const ls = tdLists(), _s = grab(); store.set('todos', l.filter(x => !(x.done && tdIn(x, tdSel, ls)))); drawTodo(); showUndo('Cleared the done to-dos', _s);
   }
 });
 $('#todoCard').addEventListener('change', e => { if (e.target.id === 'td_sort'){ tdSetPref('sort', e.target.value); drawTodo(); } });
@@ -1780,16 +1873,18 @@ function tdReorder(ids){
 })();
 // ---- the to-do editor: name, list, due date and time, star, note, subtasks ----
 let tdeId = null;
-function openTodoEd(id){
+function openTodoEd(id, preset){
   tdeId = id || null;
   const it = id ? store.get('todos', []).find(x => x.id === id) : null, ls = tdLists();
   $('#tde_title').textContent = it ? 'Edit to-do' : 'New to-do';
   $('#tde_t').value = it ? it.t : '';
   $('#tde_lw').style.display = ls.length > 1 ? '' : 'none';
   $('#tde_list').innerHTML = ls.map(x => '<option value="' + x.id + '">' + esc(x.name) + '</option>').join('');
-  $('#tde_list').value = it ? tdListOf(it, ls) : (tdSel !== 'all' ? tdSel : 'main');
-  $('#tde_d').value = it && it.due || ''; $('#tde_tm').value = it && it.dt || '';
-  const on = !!(it && it.star); $('#tde_star').classList.toggle('on', on); $('#tde_star').setAttribute('aria-pressed', on);
+  $('#tde_list').value = it ? tdListOf(it, ls) : tdListSel(ls);
+  const tmr = (() => { const d = parseDay(todayStr()); d.setDate(d.getDate() + 1); return isoLocal(d); })();
+  const pre = it ? {} : Object.assign(tdSel === 'sv:today' ? { due:todayStr() } : tdSel === 'sv:upcoming' ? { due:tmr } : tdSel === 'sv:starred' ? { star:true } : {}, preset || {});   // a new to-do starts as the view you are in
+  $('#tde_d').value = it ? it.due || '' : pre.due || ''; $('#tde_tm').value = it && it.dt || ''; $('#tde_rep').value = it && it.rep || '';
+  const on = !!(it ? it.star : pre.star); $('#tde_star').classList.toggle('on', on); $('#tde_star').setAttribute('aria-pressed', on);
   $('#tde_note').value = it && it.note || '';
   tdeSteps.set(it && it.steps);
   $('#tde_err').hidden = true; $('#tde_del').style.display = it ? '' : 'none'; $('#tde_move').style.display = it ? '' : 'none';
@@ -1799,13 +1894,14 @@ function openTodoEd(id){
 function tdeSave(){
   const err = msg => { $('#tde_err').textContent = msg; $('#tde_err').hidden = false; };
   const t = $('#tde_t').value.trim(); if (!t){ err('Give the to-do a name.'); return; }
-  const due = $('#tde_d').value, dt = $('#tde_tm').value;
+  let due = $('#tde_d').value; const dt = $('#tde_tm').value, rep = $('#tde_rep').value;
+  if (rep && !due) due = todayStr();             // a repeating to-do needs a date to start from
   if (dt && !due){ err('Pick a date for that time, or clear the time.'); return; }
   const l = store.get('todos', []); let it = tdeId ? l.find(x => x.id === tdeId) : null;
   if (!it){ it = { id:'t' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), done:false }; l.push(it); }
   const put = (k, v) => { if (v) it[k] = v; else delete it[k]; };
-  it.t = t; it.l = $('#tde_lw').style.display === 'none' ? (it.l || (tdSel !== 'all' ? tdSel : 'main')) : $('#tde_list').value;
-  put('due', due); put('dt', due ? dt : ''); put('star', $('#tde_star').classList.contains('on') ? true : undefined);
+  it.t = t; it.l = $('#tde_lw').style.display === 'none' ? (it.l || tdListSel()) : $('#tde_list').value;
+  put('due', due); put('dt', due ? dt : ''); put('rep', rep); put('star', $('#tde_star').classList.contains('on') ? true : undefined);
   put('note', $('#tde_note').value.trim());
   const st = tdeSteps.get(); if (st.length) it.steps = st; else delete it.steps;
   store.set('todos', l); $('#tdeDlg').close(); drawTodo();
@@ -1956,6 +2052,8 @@ function welGo(i){
   $('#wl_dots').innerHTML = Array.from({ length:n }, (_, k) => '<i' + (k === welIdx ? ' class="on"' : '') + '></i>').join('');
   $('#wl_next').textContent = welIdx === n - 1 ? (welFlow ? 'Get started' : 'Done') : 'Next';
   $('#wl_skip').hidden = welIdx === n - 1;
+  [...t.children].forEach((c, k) => c.classList.toggle('on', k === welIdx));
+  $('#welDlg').style.setProperty('--g', t.children[welIdx].style.getPropertyValue('--g') || '#3b82f6');
 }
 function openWelcome(flow){
   welFlow = !!flow; $('#welDlg').showModal(); $('#wl_track').scrollLeft = 0; welGo(0);
@@ -2589,8 +2687,14 @@ function focusNow(){ if (viewDate !== todayStr()) return; const r = document.que
   const sect = (n, a) => a && a.length ? '<h3>' + n + '</h3><ul>' + list(a) + '</ul>' : '';
   $('#tab-settings').insertAdjacentHTML('beforeend',
     '<div class="sleep about"><h2>About Yotei <span class="ver">v' + APP_VERSION + '</span></h2><p>Status: stable. Everything below is working.</p><p class=\"wn\">Icons: Phosphor, and Font Awesome Free (CC BY 4.0, fontawesome.com).</p><p class=\"wn\">Yotei was inspired by <b>Structured</b>. Much of its look and layout (the timeline, week strip, Inbox and add button) comes from that app, with thanks.</p><button class=\"add\" id=\"replayWel\" type=\"button\">Show the welcome tour</button><h3 style="font:700 12px Poppins,sans-serif;color:var(--text)">Features</h3><ul>' + list(FEATURES) + '</ul><h3 style="font:700 12px Poppins,sans-serif;color:var(--text)">Good to know</h3><ul>' + list(LIMITS) + '</ul></div>' +
-    '<div class="sleep about"><h2>Changelog</h2>' + CHANGELOG.map((c, i) =>
-      '<details class="clog"' + (i === 0 ? ' open' : '') + '><summary>v' + esc(c.v) + '<span>' + esc(c.date) + '</span></summary>' + sect('Added', c.added) + sect('Changed', c.changed) + sect('Fixed', c.fixed) + '</details>').join('') + '</div>');
+    '<div class="sleep about"><h2>Changelog</h2>' + (() => {
+      const MON = { Jan:'January', Feb:'February', Mar:'March', Apr:'April', May:'May', Jun:'June', Jul:'July', Aug:'August', Sep:'September', Oct:'October', Nov:'November', Dec:'December' };
+      const label = d => { const z = /^([A-Za-z]{3})[a-z]* (\d{4})$/.exec(d || ''); return z && MON[z[1]] ? MON[z[1]] + ' ' + z[2] : (d === 'Initial' ? 'First release' : d || 'Earlier'); };
+      const groups = [];
+      CHANGELOG.forEach(c => { const l = label(c.date), g = groups[groups.length - 1]; if (g && g.l === l) g.items.push(c); else groups.push({ l, items:[c] }); });
+      return groups.map((g, gi) => '<details class="clMonth"' + (gi === 0 ? ' open' : '') + '><summary>' + esc(g.l) + '<span>' + g.items.length + (g.items.length === 1 ? ' version' : ' versions') + '</span></summary>' +
+        g.items.map((c, i) => '<details class="clog"' + (gi === 0 && i === 0 ? ' open' : '') + '><summary>v' + esc(c.v) + '</summary>' + sect('Added', c.added) + sect('Changed', c.changed) + sect('Fixed', c.fixed) + '</details>').join('') + '</details>').join('');
+    })() + '</div>');
 })();
 const tabs = document.querySelectorAll('.tabs button');
 // ---- Android back button (only wired up inside the Android app) ----

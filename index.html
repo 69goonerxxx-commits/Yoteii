@@ -293,6 +293,7 @@
   <label id="tde_lw">List<select id="tde_list"></select></label>
   <div class="er"><label>Due date<input id="tde_d" type="date"></label><label>Time (optional)<input id="tde_tm" type="time"></label></div>
   <div class="chips" id="tde_chips"><button type="button" data-q="0">Today</button><button type="button" data-q="1">Tomorrow</button><button type="button" data-q="7">Next week</button><button type="button" data-q="nd">No date</button><button type="button" data-q="nt">No time</button></div>
+  <label>Repeat<select id="tde_rep"><option value="">Does not repeat</option><option value="d">Every day</option><option value="wd">Weekdays</option><option value="w">Every week</option><option value="m">Every month</option><option value="y">Every year</option></select></label>
   <div class="chips"><button type="button" id="tde_star" aria-pressed="false">&#9733; Starred</button></div>
   <label>Note<textarea id="tde_note" rows="2" placeholder="Anything worth remembering"></textarea></label>
   <div class="sdWrap"><span class="sdLab">Subtasks <em id="tde_stepsN"></em></span><div id="tde_steps"></div><button type="button" id="tde_stepAdd" class="sdAdd">+ Add subtask</button></div>
@@ -305,15 +306,57 @@
   <input id="tdl_t" maxlength="24" autocomplete="off" placeholder="List name" aria-label="List name">
   <div class="ea"><button type="button" id="tdl_del" class="danger">Delete list</button><button type="button" id="tdl_x">Cancel</button><button type="button" id="tdl_ok">Save</button></div>
 </div></dialog>
-<dialog id="welDlg"><div class="wlIn">
+<dialog id="welDlg" aria-label="Welcome to Yotei"><div class="wlIn">
+  <button type="button" id="wl_skip" class="wlSkip">Skip</button>
   <div class="wlTrack" id="wl_track">
-    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg></div><h2>Welcome to Yotei</h2><p>A daily schedule that flows from your wake time. Tell Yotei when you wake up and it lays out your whole day for you.</p></section>
-    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg></div><h2>Blocks and tasks</h2><p>Your day is split into blocks of time. Add tasks to a block, say how long they take and whether they can shrink when time is short. For each block, choose Home, School or Away.</p></section>
-    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h2>Running late? It adapts</h2><p>Tasks shrink or move to fit the day, and fixed-time tasks stay put. Free gaps show a + Add task button, and Running late in the + menu pushes the rest of your day.</p></section>
-    <section class="wlCard"><div class="wlIc"><svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4zM4 13h5l1 2h4l1-2h5"/></svg></div><h2>Capture, then tick off</h2><p>The Inbox holds thoughts you have not scheduled yet, and the To-do tab is a simple checklist. Tick tasks as you go, and see how you are doing in History.</p><p class="wlCredit">Yotei was inspired by Structured.</p></section>
+    <section class="wlPg" style="--g:#3b82f6">
+      <div class="wlHero"><svg class="wlLogo" viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="220" r="118" fill="none" stroke="#1d4ed8" stroke-width="16" opacity="0.6"/><circle cx="256" cy="220" r="118" fill="none" stroke="#60a5fa" stroke-width="3" opacity="0.4"/><polyline points="194,222 240,268 320,176" fill="none" stroke="#60a5fa" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/><circle cx="208" cy="396" r="7" fill="#1d4ed8"/><circle cx="232" cy="396" r="7" fill="#1d4ed8"/><circle cx="256" cy="396" r="7" fill="#3b82f6"/><circle cx="280" cy="396" r="7" fill="#3b82f6"/><circle cx="304" cy="396" r="7" fill="#60a5fa"/></svg></div>
+      <h2 class="wlBig wlName">Yotei</h2>
+      <p class="wlSub">Your day, planned around when you wake up.</p>
+      <div class="wlPills"><span>Timeline</span><span>To-do</span><span>Inbox</span></div>
+    </section>
+    <section class="wlPg" style="--g:#f97316">
+      <h2 class="wlBig">A day that flows from your wake time</h2>
+      <p class="wlSub">Tell Yotei when you wake up and it lays out every block of your day.</p>
+      <div class="wlMock">
+        <div class="mkWake"><span>Wake time</span><b>6:30 AM</b></div>
+        <div class="mkRow" style="--c:#f59e0b"><i class="mkDot"></i><div><b>Morning routine</b><small>6:30 – 7:30 AM</small></div><span class="mkChk"></span></div>
+        <div class="mkRow" style="--c:#f97316"><i class="mkDot"></i><div><b>First climb</b><small>7:30 – 9:30 AM · 3 tasks</small></div><span class="mkChk on"></span></div>
+        <div class="mkRow" style="--c:#a78bfa"><i class="mkDot"></i><div><b>Study block</b><small>9:45 – 11:00 AM</small></div><span class="mkChk"></span></div>
+      </div>
+    </section>
+    <section class="wlPg" style="--g:#22c55e">
+      <h2 class="wlBig">Blocks that fit where you are</h2>
+      <p class="wlSub">Pick Home, School or Away for each block, and your tasks follow.</p>
+      <div class="wlMock">
+        <div class="mkSeg"><span class="on">Home</span><span>School</span><span>Away</span></div>
+        <div class="mkCard"><b>Morning routine</b><small>Home day · 4 tasks</small></div>
+        <div class="mkCard"><b>First climb</b><small>Switches to School at 8:00 AM</small></div>
+        <div class="mkCard"><b>Evening wind-down</b><small>Home day · 2 tasks</small></div>
+      </div>
+    </section>
+    <section class="wlPg" style="--g:#ec4899">
+      <h2 class="wlBig">Running late? It adapts</h2>
+      <p class="wlSub">Tasks shrink or move to fit. Fixed-time tasks stay exactly where you put them.</p>
+      <div class="wlMock">
+        <div class="mkBanner">Running late: everything moved +20 min</div>
+        <div class="mkRow" style="--c:#f97316"><i class="mkDot"></i><div><b>Read chapter</b><small>9:20 – 9:45 AM</small></div><span class="mkTag warn">−5 min</span></div>
+        <div class="mkRow" style="--c:#60a5fa"><i class="mkDot"></i><div><b>Gym</b><small>6:00 PM</small></div><span class="mkTag">fixed time</span></div>
+        <div class="mkRow cut" style="--c:#a4a4ab"><i class="mkDot"></i><div><b>Tidy desk</b><small>Skipped today</small></div><span class="mkTag bad">cut today</span></div>
+      </div>
+    </section>
+    <section class="wlPg" style="--g:#a78bfa">
+      <h2 class="wlBig">Capture it. Tick it off.</h2>
+      <p class="wlSub">The Inbox holds loose thoughts. The To-do list holds everything with a deadline.</p>
+      <div class="wlMock">
+        <div class="mkTd" style="--lc:#5e96cb"><span class="mkRing"></span><div><b>Study Chem</b><span class="mkChip today">Today, 9:30 AM</span><span class="mkChip">1/2</span></div><span class="mkStar">★</span></div>
+        <div class="mkTd" style="--lc:#22c55e"><span class="mkRing"></span><div><b>Submit the report</b><span class="mkChip late">Overdue · Yesterday</span></div></div>
+        <div class="mkTd" style="--lc:#a4a4ab"><div><b>Call the dentist</b><small>In your Inbox</small></div><span class="mkBtn">Schedule</span></div>
+      </div>
+      <p class="wlCredit">Inspired by Structured</p>
+    </section>
   </div>
-  <div class="wlDots" id="wl_dots" aria-hidden="true"></div>
-  <div class="ea"><button type="button" id="wl_skip">Skip</button><button type="button" id="wl_next">Next</button></div>
+  <div class="wlFoot"><div class="wlDots" id="wl_dots" aria-hidden="true"></div><button type="button" id="wl_next" class="wlNext">Next</button></div>
 </div></dialog>
 <dialog id="setupDlg"><div class="ef">
   <h2>Welcome to Yotei</h2>

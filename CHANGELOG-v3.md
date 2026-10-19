@@ -2,6 +2,12 @@
 
 Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 entry in `about.js`.
 
+## 3.1.2
+- Smart views: chips `sv:today` (due today or earlier), `sv:upcoming` (due after today) and `sv:starred`, filtered by tdIn(); each shows a count of open to-dos. tdSel can be 'all', a smart view or a list id, so anything that needs a real list uses tdListSel(). A new to-do inherits the view (due today, due tomorrow, or starred).
+- Calendar view: `todoPrefs.mode` is 'list' or 'cal'. tdCalHtml() draws a Monday-first month grid with up to three dots per day (list colour, red when overdue) and the selected day's to-dos below, using the same cards. Picking a smart view while in the calendar switches back to the list.
+- Repeat: `rep` is d | wd | w | m | y and needs a due date (saving a repeat with no date uses today). tdNext() gives the next date after the current one and never before today; ticking a repeating to-do calls tdAdvance() (due moves on, subtask ticks reset) instead of marking it done, with Undo. Send to Timeline does the same instead of removing the to-do. Monthly and yearly clamp to the last day of a short month, so a to-do from the 31st drifts to the 28th after February.
+- Edit list became a ⋯ icon button beside the view toggle.
+
 ## 3.1.1 (built in phases; later phases add to this entry)
 - Phase 1, To-do tab: lists (`todoLists`: { id, name }, `main` always exists and cannot be deleted; a to-do's `l` is its list, missing means main), chips row with All and +, #tdlDlg to add, rename and delete a list (deleting moves its to-dos to the first list, with Undo). Quick-add shows a list picker when there is more than one list.
 - Star (`star: true`) floats a to-do into its own group above the others. Drag handle (.tdH) reorders inside a group by rewriting the group's slots in the `todos` array (tdReorder). Handles only show with the My order sort.
@@ -11,6 +17,11 @@ Released as 3.0.0 (Oct 2026). The user-facing version of this list is the 3.0.0 
 - Subtask rows were made into makeSteps() so the task editor and the to-do editor share one implementation.
 - Phase 3: #tde_tl (Send to Timeline) closes the to-do editor, switches to the Timeline, jumps to the due day when it is today or later, and opens the one-off editor with the name, note (as Details) and subtasks filled in; the due time becomes the Start time. It sets cur.fromTodo, and #e_ok removes the to-do only when the task is saved, so cancelling loses nothing. #tde_inbox moves the to-do to the Inbox (name only, asks first when a date, note or subtasks would be dropped; Undo).
 - One-offs scheduled from the Inbox or a to-do carry `src` ('inbox' | 'todo'). The engine already spreads block fields into rows, so rowHtml shows a "from Inbox" / "from To-do" tag next to the other tags. `src` survives later edits because it is not in the editor's FORM list.
+- Polish pass: `.wn` had `margin:-4px 0 2px` and no line-height, which pulled notes into the line above; it now has positive spacing. Inbox and To-do content was inset 36px (tab padding 20 plus card padding 16); the card padding is gone so it lines up with the title. Subtask inputs lost their nested border. Inbox rows put Schedule and remove under the text instead of squeezing it.
+- To-do cards (.tdItem with --lc, the list colour from TD_COLORS; the first list uses the accent). Default sort is `date` (tdPrefs.sort, old 'due' maps to it): sections Overdue, Today, Tomorrow, Upcoming, No date, each collapsible (tdPrefs.hide); drag only in No date. 'My order', A to Z and Newest first stay flat, with starred and overdue groups. The row delete cross is gone; the editor has Delete. The + chip sits outside the scrolling chips.
+- Welcome tour rebuilt as full-screen pages (#welDlg): logo page, then four pages each with a headline and a drawn mini screen (.wlMock). Ids #wl_track, #wl_dots, #wl_next, #wl_skip are unchanged. The active page gets .on (entrance animation) and sets --g, the background tint.
+- Bottom bar: the five tab icons now shrink on narrow screens (`.tabs .ti` width), so Settings is no longer cut off at 320px. Subtask rows got a 6px gap.
+- Inbox items are cards (.inCard, accent edge, Schedule pill with a calendar icon, ✕), replacing .inItem/.inList. History and About text got line-height and margins (#tab-history p.wn, .about p, #replayWel). The changelog is grouped into month sections (.clMonth) built from each entry's `date` ('Oct 2026' becomes October 2026, 'Initial' becomes First release); add new entries at the top of CHANGELOG as before.
 
 ## 3.1
 - Inbox: layout copied from the original (38px icon, short title, one New Inbox Task button). The inline composer is gone; New Inbox Task and the + menu open #qaDlg, a dialog pinned near the top, so the keyboard cannot resize the page. Text has side padding.

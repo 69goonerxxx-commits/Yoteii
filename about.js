@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.1.1';
+export const APP_VERSION = '3.1.2';
 export const FEATURES = [
   'A daily timeline built from your wake time, split into seven energy windows',
   'Morning and Night Routines that shrink (optional, then flexible, then core) to fit',
@@ -10,7 +10,7 @@ export const FEATURES = [
   'History and trends for the last 90 days',
   'Run mode that counts you through a routine step by step',
   'Streaks, a weekly view, routine templates and reminders',
-  'One-off tasks, an Inbox for unscheduled thoughts, and a To-do tab for a plain checklist',
+  'One-off tasks, an Inbox for unscheduled thoughts, and a To-do tab with lists, due dates, repeats and a calendar',
   'Edit a task for one day, from a day onward, or for all days, with weekday and mode limits',
   'Undo, drag and drop, usual day types, energy check-ins and a weekly review',
   'Move, copy, copy a whole day, or push the day later when running late',
@@ -25,6 +25,17 @@ export const LIMITS = [
   'Calendar import is a one-time copy of timed events, not a live sync'
 ];
 export const CHANGELOG = [
+  { v:'3.1.2', date:'Oct 2026',
+    added:[
+      'Calendar view for the To-do tab: tap the calendar button to see a month with dots on the days that have to-dos, tap a day to see its to-dos, and add one for that day',
+      'Smart views next to All: Today (including overdue), Upcoming and Starred, each with a count',
+      'Repeat for to-dos: every day, weekdays, every week, every month or every year. Ticking a repeating to-do moves it to its next date (with Undo)'
+    ],
+    changed:[
+      'A new to-do starts as the view you are in: in Today it is due today, in Starred it is starred, and from the calendar it gets that day',
+      'Edit list is now a small ⋯ button next to the view buttons',
+      'Send to Timeline keeps a repeating to-do in the list and moves it to its next date'
+    ] },
   { v:'3.1.1', date:'Oct 2026',
     added:[
       'To-do lists: chips at the top (All plus your own lists) with a + to add one, and Edit list to rename or delete it',
@@ -37,6 +48,16 @@ export const CHANGELOG = [
       'Send to Timeline from a to-do: it opens the task editor with the name, note and subtasks filled in (and the due day and time, if set). The to-do leaves the list once you save the task',
       'Move to Inbox from a to-do, with Undo',
       'Tasks that came from the Inbox or the To-do list show a small "from Inbox" or "from To-do" tag on the timeline'
+    ],
+    changed:[
+      'The To-do tab now looks like a to-do app: each to-do is a card with a coloured edge for its list, a due-date pill, and the star on the right',
+      'By default the list is grouped by date into Overdue, Today, Tomorrow, Upcoming and No date, and each group folds away. My order is still there as a flat list you can drag',
+      'To-dos are deleted from their editor, which frees room on the card',
+      'A new welcome tour: full-screen pages with a headline and a small picture of the real app on each',
+      'More space between texts, buttons and cards throughout the app, with no more text squeezed into the line above it',
+      'Inbox tasks are cards too, with a coloured edge and a Schedule button, to match the To-do list',
+      'More room around the text on History and About, and around the welcome tour button',
+      'The changelog is grouped by month'
     ] },
   { v:'3.1', date:'Oct 2026',
     added:[
